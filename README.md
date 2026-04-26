@@ -15,8 +15,8 @@ Reads real-time game data from the running process and exposes it for overlays a
 |---|---|
 | **Player** | HP, Health State (Fine / Caution / Danger / Dead) |
 | **In-Game Time** | Raw seconds, Formatted `hh:mm:ss` |
-| **Frame Rate** | FPS |
 | **Weapons** | Handgun, Shotgun, Sub-Machine Gun |
+| **Items** | Beef Jerky count |
 | **Run Stats** | Saves, Items, Shooting Kills, Melee Kills, Damage Taken |
 | **Difficulty** | Action Level, Riddle Level |
 | **Boss Times** | Split Worm, Missionary, Leonard, Memory of Alessa, God |

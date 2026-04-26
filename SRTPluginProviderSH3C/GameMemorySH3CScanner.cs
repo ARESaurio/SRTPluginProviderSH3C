@@ -29,9 +29,11 @@ namespace SRTPluginProviderSH3C
         private const ulong OFFSET_PLAYER_HP     = 0x498668;
         private const ulong OFFSET_DAMAGE_TAKEN  = 0x498650;
 
-        // In-Game Time & FPS
+        // In-Game Time
         private const ulong OFFSET_IGT           = 0x6CE66F4;
-        private const ulong OFFSET_FPS           = 0x6D2CAB8;
+
+        // Beef Jerky item count
+        private const ulong OFFSET_BEEF_JERKY    = 0x6D2CAB8;
 
         // Weapons
         private const ulong OFFSET_HANDGUN       = 0x6D2CAA2;
@@ -110,8 +112,8 @@ namespace SRTPluginProviderSH3C
                 // ── In-Game Time ──────────────────────────────────────────
                 gameMemoryValues._igt = ReadFloat(baseAddress + OFFSET_IGT);
 
-                // ── Frame Rate ────────────────────────────────────────────
-                gameMemoryValues._fps = ReadInt16(baseAddress + OFFSET_FPS);
+                // ── Beef Jerky ────────────────────────────────────────────
+                gameMemoryValues._beefJerky = ReadInt16(baseAddress + OFFSET_BEEF_JERKY);
 
                 // ── Weapons ───────────────────────────────────────────────
                 gameMemoryValues._handgunCount    = ReadInt16(baseAddress + OFFSET_HANDGUN);

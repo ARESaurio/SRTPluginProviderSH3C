@@ -22,9 +22,9 @@ namespace SRTPluginProviderSH3C
         public float IGT { get => _igt; }
         internal float _igt;
 
-        // ── Frame Rate ───────────────────────────────────────────────────────
-        public short FPS { get => _fps; }
-        internal short _fps;
+        // ── Beef Jerky ───────────────────────────────────────────────────────
+        public short BeefJerky { get => _beefJerky; }
+        internal short _beefJerky;
 
         // ── Weapons ──────────────────────────────────────────────────────────
         public short HandgunCount    { get => _handgunCount; }

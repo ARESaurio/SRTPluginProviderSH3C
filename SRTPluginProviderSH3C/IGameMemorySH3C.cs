@@ -16,8 +16,8 @@ namespace SRTPluginProviderSH3C
         TimeSpan IGTTimeSpan       { get; }
         string   IGTFormattedString { get; }
 
-        // Frame Rate
-        short FPS { get; }
+        // Items
+        short BeefJerky { get; }
 
         // Weapons
         short HandgunCount    { get; }

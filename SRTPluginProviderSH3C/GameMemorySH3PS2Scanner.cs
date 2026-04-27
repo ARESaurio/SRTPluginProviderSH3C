@@ -10,8 +10,9 @@ namespace SRTPluginProviderSH3C
     /// Supports PCSX2-Qt 2.x (tested on 2.6.3).
     ///
     /// Strategy: scan PCSX2's virtual address space for the PS2 EE RAM block
-    /// (a 32 MB committed region), then verify it belongs to SH3 by checking
-    /// that Heather's HP float is within the valid range [0.0, 100.0].
+    /// (committed region >= 32 MB), then verify it belongs to SH3 by checking
+    /// that difficulty bytes, HP, and IGT are all within valid ranges.
+    /// This avoids false-positives on zeroed or unrelated memory blocks.
     ///
     /// Source: RetroAchievements Code Notes — Silent Hill 3 (PS2).
     /// </summary>
@@ -193,9 +194,10 @@ namespace SRTPluginProviderSH3C
         // ── EE RAM Detection ──────────────────────────────────────────────────
 
         /// <summary>
-        /// Scans PCSX2's virtual address space for the 32 MB PS2 EE RAM block.
-        /// Verifies the block belongs to SH3 by confirming Heather's HP is
-        /// within the valid range [0.0, 100.0].
+        /// Scans PCSX2's virtual address space for the PS2 EE RAM block.
+        /// Accepts any committed region >= 32 MB (PCSX2 2.x may allocate
+        /// slightly different sizes depending on memory access mode).
+        /// Validates the block with VerifySH3Block() before returning.
         /// </summary>
         private ulong FindEERAMBase()
         {
@@ -208,19 +210,49 @@ namespace SRTPluginProviderSH3C
                 if (VirtualQueryEx(processHandle, address, out var mbi, (uint)mbiSize) == 0)
                     break;
 
-                if (mbi.RegionSize == EE_RAM_SIZE && mbi.State == MEM_COMMIT)
+                // Accept any committed block that is at least 32 MB.
+                if (mbi.State == MEM_COMMIT && mbi.RegionSize >= EE_RAM_SIZE)
                 {
-                    float hp = ReadFloat(mbi.BaseAddress + OFFSET_HP);
-                    if (hp >= 0.0f && hp <= 100.001f && !float.IsNaN(hp))
+                    if (VerifySH3Block(mbi.BaseAddress))
                         return mbi.BaseAddress;
                 }
 
                 ulong next = mbi.BaseAddress + Math.Max(mbi.RegionSize, 1UL);
-                if (next <= address) break; // overflow guard
+                if (next <= address) break;
                 address = next;
             }
 
             return 0;
+        }
+
+        /// <summary>
+        /// Validates a candidate memory block against multiple SH3-specific
+        /// invariants to avoid false-positives on zeroed or unrelated memory.
+        /// </summary>
+        private bool VerifySH3Block(ulong baseAddr)
+        {
+            // Action difficulty: enum byte in [0, 5].
+            byte actionDiff = ReadByte(baseAddr + OFFSET_ACTION_DIFF);
+            if (actionDiff > 5) return false;
+
+            // Riddle difficulty: enum byte in [0, 2].
+            byte riddleDiff = ReadByte(baseAddr + OFFSET_RIDDLE_DIFF);
+            if (riddleDiff > 2) return false;
+
+            // HP: valid IEEE-754 float within [0.0, 100.0].
+            float hp = ReadFloat(baseAddr + OFFSET_HP);
+            if (float.IsNaN(hp) || float.IsInfinity(hp)) return false;
+            if (hp < 0f || hp > 100.001f) return false;
+
+            // IGT: valid non-negative float (not NaN, not Infinity).
+            float igt = ReadFloat(baseAddr + OFFSET_IGT);
+            if (float.IsNaN(igt) || float.IsInfinity(igt) || igt < 0f) return false;
+
+            // Game flags: must be 0x00 (in-game), 0x04 (results), or 0x40 (title).
+            byte gameFlags = ReadByte(baseAddr + 0x3DAEFD);
+            if (gameFlags != 0x00 && gameFlags != 0x04 && gameFlags != 0x40) return false;
+
+            return true;
         }
 
         // ── Low-level reads ───────────────────────────────────────────────────

@@ -231,6 +231,14 @@ namespace SRTPluginProviderSH3C
         /// </summary>
         private bool VerifySH3Block(ulong baseAddr)
         {
+            // HP must be a valid float within (0, 100.0].
+            // This is the key filter — zeroed blocks have HP=0.0 and are rejected.
+            // Once found, eeRamBase is cached so we keep reading even when HP
+            // legitimately drops to 0 (Heather died, loading screen, etc.).
+            float hp = ReadFloat(baseAddr + OFFSET_HP);
+            if (float.IsNaN(hp) || float.IsInfinity(hp)) return false;
+            if (hp <= 0.001f || hp > 100.001f) return false;
+
             // Action difficulty: enum byte in [0, 5].
             byte actionDiff = ReadByte(baseAddr + OFFSET_ACTION_DIFF);
             if (actionDiff > 5) return false;
@@ -238,11 +246,6 @@ namespace SRTPluginProviderSH3C
             // Riddle difficulty: enum byte in [0, 2].
             byte riddleDiff = ReadByte(baseAddr + OFFSET_RIDDLE_DIFF);
             if (riddleDiff > 2) return false;
-
-            // HP: valid IEEE-754 float within [0.0, 100.0].
-            float hp = ReadFloat(baseAddr + OFFSET_HP);
-            if (float.IsNaN(hp) || float.IsInfinity(hp)) return false;
-            if (hp < 0f || hp > 100.001f) return false;
 
             // IGT: valid non-negative float (not NaN, not Infinity).
             float igt = ReadFloat(baseAddr + OFFSET_IGT);

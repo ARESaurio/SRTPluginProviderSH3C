@@ -1,5 +1,8 @@
 # SRTPluginProviderSH3C
 
+![Release](https://img.shields.io/github/v/release/ARESaurio/SRTPluginProviderSH3C?label=current%20release&style=for-the-badge)
+![Date](https://img.shields.io/github/release-date/ARESaurio/SRTPluginProviderSH3C?style=for-the-badge)
+![Downloads](https://img.shields.io/github/downloads/ARESaurio/SRTPluginProviderSH3C/total?color=%23007EC6&style=for-the-badge)
 [![Silent Hill 3](https://img.shields.io/badge/Silent%20Hill%203-2003-orange)](https://en.wikipedia.org/wiki/Silent_Hill_3)
 [![SRT Host](https://img.shields.io/badge/SRT-Plugin%20Provider-blue)](https://github.com/SpeedRunTooling)
 ![Platform](https://img.shields.io/badge/platform-x64-lightgrey)
@@ -38,7 +41,7 @@ Reads real-time game data from the running process and exposes it for overlays a
 
 ## Credits
 
-- **[Ares](https://github.com/ARESaurio)** — Plugin development  
+- **[Ares](https://github.com/ARESaurio)** — Plugin development and SH3 NHT memory research  
 - **[Miguel_mm_95](https://github.com/miguelmm95)** — SH3 NHT memory research
 
 ## License

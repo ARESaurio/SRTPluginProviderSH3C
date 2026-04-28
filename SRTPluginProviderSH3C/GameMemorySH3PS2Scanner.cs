@@ -193,28 +193,63 @@ namespace SRTPluginProviderSH3C
 
         // ── EE RAM Detection ──────────────────────────────────────────────────
 
+        // HP=100.0f in little-endian IEEE-754: bytes [0x00, 0x00, 0xC8, 0x42].
+        // This is Heather's full health value, present at game start and on resets.
+        private static readonly byte[] HP_FULL_PATTERN = { 0x00, 0x00, 0xC8, 0x42 };
+
         /// <summary>
-        /// Scans PCSX2's virtual address space for the PS2 EE RAM block.
-        /// Accepts any committed region >= 32 MB (PCSX2 2.x may allocate
-        /// slightly different sizes depending on memory access mode).
-        /// Validates the block with VerifySH3Block() before returning.
+        /// Finds the PS2 EE RAM base by scanning PCSX2's committed memory for
+        /// Heather's full HP value (100.0f = [00 00 C8 42]) at 4-byte aligned
+        /// positions, then computing candidate = hit_address − HP_OFFSET.
+        ///
+        /// This approach works because:
+        ///   - The EE RAM may not start at the beginning of any VirtualQueryEx
+        ///     region; it can be in the middle of a larger virtual reservation.
+        ///   - Once the EE base is found it is cached for the session, so
+        ///     subsequent reads work even when HP drops to 0.
+        ///
+        /// Requires HP = 100.0f (full health). For speedrunners this is always
+        /// true on game start / reset. Re-scans on each Refresh() until found.
         /// </summary>
         private ulong FindEERAMBase()
         {
-            ulong address = 0;
             const ulong MAX_ADDR = 0x00007FFFFFFFFFFFUL;
+            const ulong MIN_REGION = 0x100000UL; // 1 MB minimum
             int mbiSize = Marshal.SizeOf<MEMORY_BASIC_INFORMATION>();
+            ulong address = 0;
 
             while (address < MAX_ADDR)
             {
                 if (VirtualQueryEx(processHandle, address, out var mbi, (uint)mbiSize) == 0)
                     break;
 
-                // Accept any committed block that is at least 32 MB.
-                if (mbi.State == MEM_COMMIT && mbi.RegionSize >= EE_RAM_SIZE)
+                if (mbi.State == MEM_COMMIT && mbi.RegionSize >= MIN_REGION &&
+                    (mbi.Protect == PAGE_READWRITE || (mbi.Protect & PAGE_READWRITE) != 0))
                 {
-                    if (VerifySH3Block(mbi.BaseAddress))
-                        return mbi.BaseAddress;
+                    // Read up to 33 MB from this region (covers the full EE RAM range).
+                    int readLen = (int)Math.Min(mbi.RegionSize, EE_RAM_SIZE + 0x100000UL);
+                    var buf = new byte[readLen];
+                    ReadProcessMemory(processHandle, mbi.BaseAddress, buf, readLen, out int bytesRead);
+
+                    // Search for HP=100.0f pattern at 4-byte aligned positions.
+                    for (int i = 0; i <= bytesRead - 4; i += 4)
+                    {
+                        if (buf[i]     != HP_FULL_PATTERN[0]) continue;
+                        if (buf[i + 1] != HP_FULL_PATTERN[1]) continue;
+                        if (buf[i + 2] != HP_FULL_PATTERN[2]) continue;
+                        if (buf[i + 3] != HP_FULL_PATTERN[3]) continue;
+
+                        ulong hitAddr = mbi.BaseAddress + (ulong)i;
+                        if (hitAddr < OFFSET_HP) continue; // underflow guard
+
+                        ulong candidate = hitAddr - OFFSET_HP;
+
+                        // EE RAM must be page-aligned (4 KB boundary).
+                        if ((candidate & 0xFFFUL) != 0) continue;
+
+                        if (VerifySH3Block(candidate))
+                            return candidate;
+                    }
                 }
 
                 ulong next = mbi.BaseAddress + Math.Max(mbi.RegionSize, 1UL);
@@ -226,19 +261,13 @@ namespace SRTPluginProviderSH3C
         }
 
         /// <summary>
-        /// Validates a candidate memory block against multiple SH3-specific
-        /// invariants to avoid false-positives on zeroed or unrelated memory.
+        /// Validates a candidate EE RAM base address by checking that SH3-specific
+        /// fields are within their known valid ranges.
+        /// HP is intentionally NOT checked here — the AoB scan already guarantees
+        /// it equals 100.0f at the expected offset.
         /// </summary>
         private bool VerifySH3Block(ulong baseAddr)
         {
-            // HP must be a valid float within (0, 100.0].
-            // This is the key filter — zeroed blocks have HP=0.0 and are rejected.
-            // Once found, eeRamBase is cached so we keep reading even when HP
-            // legitimately drops to 0 (Heather died, loading screen, etc.).
-            float hp = ReadFloat(baseAddr + OFFSET_HP);
-            if (float.IsNaN(hp) || float.IsInfinity(hp)) return false;
-            if (hp <= 0.001f || hp > 100.001f) return false;
-
             // Action difficulty: enum byte in [0, 5].
             byte actionDiff = ReadByte(baseAddr + OFFSET_ACTION_DIFF);
             if (actionDiff > 5) return false;
@@ -247,13 +276,9 @@ namespace SRTPluginProviderSH3C
             byte riddleDiff = ReadByte(baseAddr + OFFSET_RIDDLE_DIFF);
             if (riddleDiff > 2) return false;
 
-            // IGT: valid non-negative float (not NaN, not Infinity).
-            float igt = ReadFloat(baseAddr + OFFSET_IGT);
-            if (float.IsNaN(igt) || float.IsInfinity(igt) || igt < 0f) return false;
-
-            // Game flags: must be 0x00 (in-game), 0x04 (results), or 0x40 (title).
-            byte gameFlags = ReadByte(baseAddr + 0x3DAEFD);
-            if (gameFlags != 0x00 && gameFlags != 0x04 && gameFlags != 0x40) return false;
+            // Game area: must be a known valid area ID (0x00 – 0x27).
+            byte gameArea = ReadByte(baseAddr + OFFSET_GAME_AREA);
+            if (gameArea > 0x27) return false;
 
             return true;
         }

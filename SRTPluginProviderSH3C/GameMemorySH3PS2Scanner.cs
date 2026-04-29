@@ -345,36 +345,34 @@ namespace SRTPluginProviderSH3C
         /// </summary>
         private ulong ScanForPALViaIGT(ulong maxAddr, ulong minRegion, int mbiSize)
         {
-            // Collect unique AllocBases from all committed readable segments.
-            var allocBases = new System.Collections.Generic.HashSet<ulong>();
+            // Key insight: in PCSX2 2.x the EE RAM start (our "EE base") always
+            // coincides exactly with a VirtualQueryEx segment's BaseAddress.
+            // This was verified empirically: VQDiag showed BaseAddress=EE base=0x00007FF71006B000.
+            //
+            // Strategy: enumerate all committed PAGE_READWRITE segment BaseAddresses,
+            // try reading PAL_IGT from each via ReadProcessMemory (which crosses
+            // committed pages in the same reservation), snapshot values in range,
+            // single 300ms sleep, then delta-check. Fast and non-blocking.
+
+            // ── Pass 1: snapshot ──────────────────────────────────────────────
+            var snapshot = new System.Collections.Generic.Dictionary<ulong, float>();
             ulong addr = 0;
             while (addr < maxAddr)
             {
                 if (VirtualQueryEx(processHandle, addr, out var mbi, (uint)mbiSize) == 0) break;
+
                 if (mbi.State == MEM_COMMIT &&
                     (mbi.Protect == PAGE_READWRITE || (mbi.Protect & PAGE_READWRITE) != 0))
-                    allocBases.Add(mbi.AllocationBase);
+                {
+                    ulong eb = mbi.BaseAddress;
+                    float v = ReadFloat(eb + PAL_IGT);
+                    if (!float.IsNaN(v) && !float.IsInfinity(v) && v > 0.1f && v < 36000f)
+                        snapshot[eb] = v;
+                }
+
                 ulong nx = mbi.BaseAddress + Math.Max(mbi.RegionSize, 1UL);
                 if (nx <= addr) break;
                 addr = nx;
-            }
-
-            const ulong SCAN_RANGE = 0x4000000UL; // 64 MB window per allocation
-            const ulong PAGE       = 0x1000UL;
-
-            // ── Pass 1: snapshot ─────────────────────────────────────────────
-            // Collect all page-aligned candidates where IGT offset holds a
-            // plausible timer value. No sleeping here — just fast reads.
-            var snapshot = new System.Collections.Generic.Dictionary<ulong, float>();
-            foreach (ulong allocBase in allocBases)
-            {
-                for (ulong eb = allocBase; eb < allocBase + SCAN_RANGE; eb += PAGE)
-                {
-                    float v = ReadFloat(eb + PAL_IGT);
-                    if (!float.IsNaN(v) && !float.IsInfinity(v) &&
-                        v > 0.1f && v < 36000f)
-                        snapshot[eb] = v;
-                }
             }
 
             if (snapshot.Count == 0) return 0;
@@ -382,9 +380,8 @@ namespace SRTPluginProviderSH3C
             // ── One sleep ────────────────────────────────────────────────────
             System.Threading.Thread.Sleep(300);
 
-            // ── Pass 2: delta check ──────────────────────────────────────────
-            // The real IGT increments at ~1 s/s. In 300 ms it should rise
-            // by 0.15–0.45 s. Any smaller delta is a coincidental static float.
+            // ── Pass 2: delta check ───────────────────────────────────────────
+            // Real PAL IGT increments at ~1 s/s. In 300 ms → delta ≈ 0.3 s.
             foreach (var kv in snapshot)
             {
                 float v2 = ReadFloat(kv.Key + PAL_IGT);

@@ -362,17 +362,19 @@ namespace SRTPluginProviderSH3C
             {
                 if (VirtualQueryEx(processHandle, addr, out var mbi, (uint)mbiSize) == 0) break;
 
+                // Accept any writable committed segment (RW=0x04 or EXECUTE_RW=0x40).
+                const uint WRITABLE_MASK = 0x44U;
                 if (mbi.State == MEM_COMMIT &&
-                    (mbi.Protect == PAGE_READWRITE || (mbi.Protect & PAGE_READWRITE) != 0) &&
-                    mbi.RegionSize >= 4 && mbi.RegionSize <= 0x800000UL) // 8 MB max to avoid JIT
+                    (mbi.Protect & WRITABLE_MASK) != 0 &&
+                    mbi.RegionSize >= 4)
                 {
-                    int readLen = (int)Math.Min(mbi.RegionSize, 0x100000UL); // 1 MB chunks
+                    int readLen = (int)Math.Min(mbi.RegionSize, 0x80000UL); // 512 KB max per seg
                     var buf = new byte[readLen];
                     ReadProcessMemory(processHandle, mbi.BaseAddress, buf, readLen, out int br);
                     for (int i = 0; i <= br - 4; i += 4)
                     {
                         float v = BitConverter.ToSingle(buf, i);
-                        if (!float.IsNaN(v) && !float.IsInfinity(v) && v > 0.5f && v < 36000f)
+                        if (!float.IsNaN(v) && !float.IsInfinity(v) && v > 1.0f && v < 36000f)
                             snapshot[mbi.BaseAddress + (ulong)i] = v;
                     }
                 }

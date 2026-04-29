@@ -55,55 +55,82 @@ namespace SRTPluginProviderSH3C
         // ── PS2 EE RAM ────────────────────────────────────────────────────────
         private const ulong EE_RAM_SIZE = 0x2000000UL; // 32 MB
 
-        // ── PS2 Memory Offsets ────────────────────────────────────────────────
-        // Source: RetroAchievements Code Notes for Silent Hill 3 (PS2).
-        // All offsets are relative to the start of the EE RAM block.
+        // ── NTSC-U (USA) Memory Offsets ───────────────────────────────────────
+        // Source: RetroAchievements Code Notes — Silent Hill 3 (USA) SLUS-20707.
 
-        // Player (entity buffer)
-        private const ulong OFFSET_HP         = 0x3D4AEC; // float, max 100.0
+        private const ulong USA_HP            = 0x3D4AEC;
+        private const ulong USA_IGT           = 0x1D87FEC;
+        private const ulong USA_PISTOL_CLIP   = 0x1D31C12;
+        private const ulong USA_SHOTGUN_CLIP  = 0x1D31C14;
+        private const ulong USA_SMG_CLIP      = 0x1D31C16;
+        private const ulong USA_PISTOL_RES    = 0x1D31C1C;
+        private const ulong USA_SHOTGUN_RES   = 0x1D31C1E;
+        private const ulong USA_SMG_RES       = 0x1D31C20;
+        private const ulong USA_BEEF_JERKY    = 0x1D31C28;
+        private const ulong USA_SAVES         = 0x1D87FDC;
+        private const ulong USA_ITEMS         = 0x1D87FE0;
+        private const ulong USA_SHOOTING      = 0x1D87FE2;
+        private const ulong USA_MELEE         = 0x1D87FE4;
+        private const ulong USA_DAMAGE        = 0x1D87FF8;
+        private const ulong USA_ACTION_DIFF   = 0x1D87FD6;
+        private const ulong USA_RIDDLE_DIFF   = 0x1D87FD7;
+        private const ulong USA_GAME_AREA     = 0x1D87FD1;
+        private const ulong USA_WORM_TIME     = 0x1D87FFC;
+        private const ulong USA_MISS_TIME     = 0x1D88000;
+        private const ulong USA_LEON_TIME     = 0x1D88004;
+        private const ulong USA_ALESS_TIME    = 0x1D88008;
+        private const ulong USA_GOD_TIME      = 0x1D8800C;
 
-        // In-Game Time
-        private const ulong OFFSET_IGT        = 0x1D87FEC; // 32-bit float (seconds)
+        // ── PAL (EU) Memory Offsets ───────────────────────────────────────────
+        // Confirmed by live diagnostic on SLES-51434 with PCSX2 2.6.3.
+        // HP and IGT verified; ammo/stats/area offsets pending confirmation.
+        // PAL entity buffer is at a different PS2 physical address than USA.
 
-        // Weapon clip ammo (currently loaded magazine)
-        private const ulong OFFSET_PISTOL_CLIP  = 0x1D31C12;
-        private const ulong OFFSET_SHOTGUN_CLIP  = 0x1D31C14;
-        private const ulong OFFSET_SMG_CLIP      = 0x1D31C16;
+        private const ulong PAL_HP            = 0x45A8F0; // confirmed
+        private const ulong PAL_IGT           = 0x1D80EA0; // confirmed
+        // TODO: remaining PAL offsets — pending in-game verification.
+        // Using 0 as sentinel so Refresh() skips them until confirmed.
+        private const ulong PAL_PISTOL_CLIP   = 0;
+        private const ulong PAL_SHOTGUN_CLIP  = 0;
+        private const ulong PAL_SMG_CLIP      = 0;
+        private const ulong PAL_PISTOL_RES    = 0;
+        private const ulong PAL_SHOTGUN_RES   = 0;
+        private const ulong PAL_SMG_RES       = 0;
+        private const ulong PAL_BEEF_JERKY    = 0;
+        private const ulong PAL_SAVES         = 0;
+        private const ulong PAL_ITEMS         = 0;
+        private const ulong PAL_SHOOTING      = 0;
+        private const ulong PAL_MELEE         = 0;
+        private const ulong PAL_DAMAGE        = 0;
+        private const ulong PAL_ACTION_DIFF   = 0;
+        private const ulong PAL_RIDDLE_DIFF   = 0;
+        private const ulong PAL_GAME_AREA     = 0;
+        private const ulong PAL_WORM_TIME     = 0;
+        private const ulong PAL_MISS_TIME     = 0;
+        private const ulong PAL_LEON_TIME     = 0;
+        private const ulong PAL_ALESS_TIME    = 0;
+        private const ulong PAL_GOD_TIME      = 0;
 
-        // Weapon reserve ammo
-        private const ulong OFFSET_PISTOL_RESERVE  = 0x1D31C1C;
-        private const ulong OFFSET_SHOTGUN_RESERVE  = 0x1D31C1E;
-        private const ulong OFFSET_SMG_RESERVE      = 0x1D31C20;
-
-        // Items
-        private const ulong OFFSET_BEEF_JERKY = 0x1D31C28;
-
-        // Run stats
-        private const ulong OFFSET_SAVES      = 0x1D87FDC;
-        private const ulong OFFSET_ITEMS      = 0x1D87FE0;
-        private const ulong OFFSET_SHOOTING   = 0x1D87FE2;
-        private const ulong OFFSET_MELEE      = 0x1D87FE4;
-        private const ulong OFFSET_DAMAGE     = 0x1D87FF8;
-
-        // Difficulty
-        private const ulong OFFSET_ACTION_DIFF = 0x1D87FD6;
-        private const ulong OFFSET_RIDDLE_DIFF = 0x1D87FD7;
-
-        // Game area
-        private const ulong OFFSET_GAME_AREA  = 0x1D87FD1;
-
-        // Boss kill times (32-bit float, seconds)
-        private const ulong OFFSET_WORM_TIME       = 0x1D87FFC;
-        private const ulong OFFSET_MISSIONARY_TIME = 0x1D88000;
-        private const ulong OFFSET_LEONARD_TIME    = 0x1D88004;
-        private const ulong OFFSET_ALESSA_TIME     = 0x1D88008;
-        private const ulong OFFSET_GOD_TIME        = 0x1D8800C;
+        // ── Active offset aliases (set after region detection) ────────────────
+        private ulong OFFSET_HP;          private ulong OFFSET_IGT;
+        private ulong OFFSET_PISTOL_CLIP; private ulong OFFSET_SHOTGUN_CLIP;
+        private ulong OFFSET_SMG_CLIP;    private ulong OFFSET_PISTOL_RESERVE;
+        private ulong OFFSET_SHOTGUN_RESERVE; private ulong OFFSET_SMG_RESERVE;
+        private ulong OFFSET_BEEF_JERKY;  private ulong OFFSET_SAVES;
+        private ulong OFFSET_ITEMS;       private ulong OFFSET_SHOOTING;
+        private ulong OFFSET_MELEE;       private ulong OFFSET_DAMAGE;
+        private ulong OFFSET_ACTION_DIFF; private ulong OFFSET_RIDDLE_DIFF;
+        private ulong OFFSET_GAME_AREA;
+        private ulong OFFSET_WORM_TIME;   private ulong OFFSET_MISSIONARY_TIME;
+        private ulong OFFSET_LEONARD_TIME; private ulong OFFSET_ALESSA_TIME;
+        private ulong OFFSET_GOD_TIME;
 
         // ── State ─────────────────────────────────────────────────────────────
         private IntPtr            processHandle   = IntPtr.Zero;
         private uint              processId;
         private ulong             eeRamBase       = 0;
         private bool              processFound    = false;
+        private bool              isPalPS2        = false;
         private GameMemorySH3PS2  gameMemoryValues;
 
         public bool HasScanned    { get; private set; }
@@ -213,25 +240,45 @@ namespace SRTPluginProviderSH3C
         /// </summary>
         private ulong FindEERAMBase()
         {
-            const ulong MAX_ADDR = 0x00007FFFFFFFFFFFUL;
-            const ulong MIN_REGION = 0x100000UL; // 1 MB minimum
+            const ulong MAX_ADDR   = 0x00007FFFFFFFFFFFUL;
+            const ulong MIN_REGION = 0x100000UL;
             int mbiSize = Marshal.SizeOf<MEMORY_BASIC_INFORMATION>();
-            ulong address = 0;
 
-            while (address < MAX_ADDR)
+            // -- Pass 1: USA (NTSC-U, SLUS-20707) --------------------------------
+            // HP=100.0f at PS2 offset 0x3D4AEC. Validate with USA Area/Difficulty.
+            ApplyOffsets(pal: false);
+            ulong result = ScanForHP(MAX_ADDR, MIN_REGION, mbiSize, USA_HP,
+                                     candidate => VerifyUSABlock(candidate));
+            if (result != 0) { isPalPS2 = false; return result; }
+
+            // -- Pass 2: PAL (EU, SLES-51434) -------------------------------------
+            // HP=100.0f at PS2 offset 0x45A8F0. Validate with PAL IGT > 0.
+            ApplyOffsets(pal: true);
+            result = ScanForHP(MAX_ADDR, MIN_REGION, mbiSize, PAL_HP,
+                               candidate => VerifyPALBlock(candidate));
+            if (result != 0) { isPalPS2 = true; return result; }
+
+            // No match found this cycle. Keep offsets at USA defaults.
+            ApplyOffsets(pal: false);
+            return 0;
+        }
+
+        private ulong ScanForHP(ulong maxAddr, ulong minRegion, int mbiSize,
+                                 ulong hpOffset, Func<ulong, bool> verify)
+        {
+            ulong address = 0;
+            while (address < maxAddr)
             {
                 if (VirtualQueryEx(processHandle, address, out var mbi, (uint)mbiSize) == 0)
                     break;
 
-                if (mbi.State == MEM_COMMIT && mbi.RegionSize >= MIN_REGION &&
+                if (mbi.State == MEM_COMMIT && mbi.RegionSize >= minRegion &&
                     (mbi.Protect == PAGE_READWRITE || (mbi.Protect & PAGE_READWRITE) != 0))
                 {
-                    // Read up to 33 MB from this region (covers the full EE RAM range).
                     int readLen = (int)Math.Min(mbi.RegionSize, EE_RAM_SIZE + 0x100000UL);
                     var buf = new byte[readLen];
                     ReadProcessMemory(processHandle, mbi.BaseAddress, buf, readLen, out int bytesRead);
 
-                    // Search for HP=100.0f pattern at 4-byte aligned positions.
                     for (int i = 0; i <= bytesRead - 4; i += 4)
                     {
                         if (buf[i]     != HP_FULL_PATTERN[0]) continue;
@@ -240,15 +287,12 @@ namespace SRTPluginProviderSH3C
                         if (buf[i + 3] != HP_FULL_PATTERN[3]) continue;
 
                         ulong hitAddr = mbi.BaseAddress + (ulong)i;
-                        if (hitAddr < OFFSET_HP) continue; // underflow guard
+                        if (hitAddr < hpOffset) continue;
 
-                        ulong candidate = hitAddr - OFFSET_HP;
-
-                        // EE RAM must be page-aligned (4 KB boundary).
+                        ulong candidate = hitAddr - hpOffset;
                         if ((candidate & 0xFFFUL) != 0) continue;
 
-                        if (VerifySH3Block(candidate))
-                            return candidate;
+                        if (verify(candidate)) return candidate;
                     }
                 }
 
@@ -256,8 +300,34 @@ namespace SRTPluginProviderSH3C
                 if (next <= address) break;
                 address = next;
             }
-
             return 0;
+        }
+
+        /// <summary>Sets the active OFFSET_xxx aliases to the correct region table.</summary>
+        private void ApplyOffsets(bool pal)
+        {
+            OFFSET_HP               = pal ? PAL_HP           : USA_HP;
+            OFFSET_IGT              = pal ? PAL_IGT           : USA_IGT;
+            OFFSET_PISTOL_CLIP      = pal ? PAL_PISTOL_CLIP   : USA_PISTOL_CLIP;
+            OFFSET_SHOTGUN_CLIP     = pal ? PAL_SHOTGUN_CLIP  : USA_SHOTGUN_CLIP;
+            OFFSET_SMG_CLIP         = pal ? PAL_SMG_CLIP      : USA_SMG_CLIP;
+            OFFSET_PISTOL_RESERVE   = pal ? PAL_PISTOL_RES    : USA_PISTOL_RES;
+            OFFSET_SHOTGUN_RESERVE  = pal ? PAL_SHOTGUN_RES   : USA_SHOTGUN_RES;
+            OFFSET_SMG_RESERVE      = pal ? PAL_SMG_RES       : USA_SMG_RES;
+            OFFSET_BEEF_JERKY       = pal ? PAL_BEEF_JERKY    : USA_BEEF_JERKY;
+            OFFSET_SAVES            = pal ? PAL_SAVES         : USA_SAVES;
+            OFFSET_ITEMS            = pal ? PAL_ITEMS         : USA_ITEMS;
+            OFFSET_SHOOTING         = pal ? PAL_SHOOTING      : USA_SHOOTING;
+            OFFSET_MELEE            = pal ? PAL_MELEE         : USA_MELEE;
+            OFFSET_DAMAGE           = pal ? PAL_DAMAGE        : USA_DAMAGE;
+            OFFSET_ACTION_DIFF      = pal ? PAL_ACTION_DIFF   : USA_ACTION_DIFF;
+            OFFSET_RIDDLE_DIFF      = pal ? PAL_RIDDLE_DIFF   : USA_RIDDLE_DIFF;
+            OFFSET_GAME_AREA        = pal ? PAL_GAME_AREA     : USA_GAME_AREA;
+            OFFSET_WORM_TIME        = pal ? PAL_WORM_TIME     : USA_WORM_TIME;
+            OFFSET_MISSIONARY_TIME  = pal ? PAL_MISS_TIME     : USA_MISS_TIME;
+            OFFSET_LEONARD_TIME     = pal ? PAL_LEON_TIME     : USA_LEON_TIME;
+            OFFSET_ALESSA_TIME      = pal ? PAL_ALESS_TIME    : USA_ALESS_TIME;
+            OFFSET_GOD_TIME         = pal ? PAL_GOD_TIME      : USA_GOD_TIME;
         }
 
         /// <summary>
@@ -266,20 +336,24 @@ namespace SRTPluginProviderSH3C
         /// HP is intentionally NOT checked here — the AoB scan already guarantees
         /// it equals 100.0f at the expected offset.
         /// </summary>
-        private bool VerifySH3Block(ulong baseAddr)
+        private bool VerifyUSABlock(ulong baseAddr)
         {
-            // Action difficulty: enum byte in [0, 5].
-            byte actionDiff = ReadByte(baseAddr + OFFSET_ACTION_DIFF);
+            byte actionDiff = ReadByte(baseAddr + USA_ACTION_DIFF);
             if (actionDiff > 5) return false;
-
-            // Riddle difficulty: enum byte in [0, 2].
-            byte riddleDiff = ReadByte(baseAddr + OFFSET_RIDDLE_DIFF);
+            byte riddleDiff = ReadByte(baseAddr + USA_RIDDLE_DIFF);
             if (riddleDiff > 2) return false;
-
-            // Game area: must be a known valid area ID (0x00 – 0x27).
-            byte gameArea = ReadByte(baseAddr + OFFSET_GAME_AREA);
+            byte gameArea = ReadByte(baseAddr + USA_GAME_AREA);
             if (gameArea > 0x27) return false;
+            return true;
+        }
 
+        private bool VerifyPALBlock(ulong baseAddr)
+        {
+            // PAL Area/Difficulty offsets not yet confirmed.
+            // Validate with PAL IGT: must be a positive, realistic value.
+            float igt = ReadFloat(baseAddr + PAL_IGT);
+            if (float.IsNaN(igt) || float.IsInfinity(igt)) return false;
+            if (igt <= 0f || igt >= 36000f) return false;
             return true;
         }
 

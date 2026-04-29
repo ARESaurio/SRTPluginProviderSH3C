@@ -128,9 +128,15 @@ namespace SRTPluginProviderSH3C
         // ── State ─────────────────────────────────────────────────────────────
         private IntPtr            processHandle   = IntPtr.Zero;
         private uint              processId;
-        private ulong             eeRamBase       = 0;
+        private long              _eeRamBase      = 0;  // backing; use Interlocked
+        private ulong             eeRamBase
+        {
+            get => (ulong)System.Threading.Interlocked.Read(ref _eeRamBase);
+            set => System.Threading.Interlocked.Exchange(ref _eeRamBase, (long)value);
+        }
         private bool              processFound    = false;
         private bool              isPalPS2        = false;
+        private bool              palScanRunning  = false;
         private GameMemorySH3PS2  gameMemoryValues;
 
         public bool HasScanned    { get; private set; }
@@ -158,17 +164,42 @@ namespace SRTPluginProviderSH3C
             processFound = processHandle != IntPtr.Zero;
             if (!processFound) return;
 
-            eeRamBase = FindEERAMBase();
+            // Pass 1: USA — fast synchronous scan (AoB, no sleep).
+            ApplyOffsets(pal: false);
+            ulong usa = ScanForHP(
+                0x00007FFFFFFFFFFFUL, 0x100000UL,
+                Marshal.SizeOf<MEMORY_BASIC_INFORMATION>(),
+                USA_HP, c => VerifyUSABlock(c));
+
+            if (usa != 0)
+            {
+                isPalPS2  = false;
+                eeRamBase = usa;
+                return;
+            }
+
+            // Pass 2: PAL — slow IGT-delta scan, run on background thread
+            // so SRTHost is not blocked during startup.
+            ApplyOffsets(pal: true);
+            isPalPS2      = true;
+            palScanRunning = true;
+            System.Threading.Tasks.Task.Run(() =>
+            {
+                ulong pal = ScanForPALViaIGT(
+                    0x00007FFFFFFFFFFFUL, 0x100000UL,
+                    Marshal.SizeOf<MEMORY_BASIC_INFORMATION>());
+                if (pal != 0) eeRamBase = pal;
+                palScanRunning = false;
+            });
         }
 
         // ── Refresh ───────────────────────────────────────────────────────────
 
         internal IGameMemorySH3PS2 Refresh()
         {
-            // Re-scan for EE RAM if we haven't found it yet (game may not have
-            // loaded when we first attached).
-            if (eeRamBase == 0 && processHandle != IntPtr.Zero)
-                eeRamBase = FindEERAMBase();
+            // If USA scan found nothing and PAL background scan is complete,
+            // the eeRamBase will have been set by the background Task.
+            // Do NOT call FindEERAMBase() synchronously here — it would block.
 
             if (eeRamBase != 0)
             {

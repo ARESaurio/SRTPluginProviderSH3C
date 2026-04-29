@@ -252,10 +252,10 @@ namespace SRTPluginProviderSH3C
             if (result != 0) { isPalPS2 = false; return result; }
 
             // -- Pass 2: PAL (EU, SLES-51434) -------------------------------------
-            // HP=100.0f at PS2 offset 0x45A8F0. Validate with PAL IGT > 0.
+            // Use IGT offset 0x1D80EA0 (confirmed) as the anchor instead of HP=100.
+            // This works regardless of Heather's current HP.
             ApplyOffsets(pal: true);
-            result = ScanForHP(MAX_ADDR, MIN_REGION, mbiSize, PAL_HP,
-                               candidate => VerifyPALBlock(candidate));
+            result = ScanForPALViaIGT(MAX_ADDR, MIN_REGION, mbiSize);
             if (result != 0) { isPalPS2 = true; return result; }
 
             // No match found this cycle. Keep offsets at USA defaults.
@@ -293,6 +293,51 @@ namespace SRTPluginProviderSH3C
                         if ((candidate & 0xFFFUL) != 0) continue;
 
                         if (verify(candidate)) return candidate;
+                    }
+                }
+
+                ulong next = mbi.BaseAddress + Math.Max(mbi.RegionSize, 1UL);
+                if (next <= address) break;
+                address = next;
+            }
+            return 0;
+        }
+
+        /// <summary>
+        /// PAL-specific scan: walks all committed memory and, for every page-aligned
+        /// address that could be an EE base (given PAL_IGT offset), reads the float
+        /// there twice (120 ms apart) and accepts it if it increased (timer ticking).
+        /// Does NOT require HP=100, so it works at any health value.
+        /// </summary>
+        private ulong ScanForPALViaIGT(ulong maxAddr, ulong minRegion, int mbiSize)
+        {
+            ulong address = 0;
+            while (address < maxAddr)
+            {
+                if (VirtualQueryEx(processHandle, address, out var mbi, (uint)mbiSize) == 0)
+                    break;
+
+                if (mbi.State == MEM_COMMIT &&
+                    mbi.RegionSize >= PAL_IGT &&         // must contain PAL_IGT offset
+                    mbi.RegionSize <= 0x8000000UL &&     // skip huge JIT reservations (>128MB)
+                    (mbi.Protect == PAGE_READWRITE || (mbi.Protect & PAGE_READWRITE) != 0))
+                {
+                    // Step through page-aligned bases within this region.
+                    ulong regionEnd = mbi.BaseAddress + mbi.RegionSize;
+                    for (ulong eb = (mbi.BaseAddress + 0xFFFUL) & ~0xFFFUL;
+                         eb + PAL_IGT + 4 < regionEnd;
+                         eb += 0x1000UL)
+                    {
+                        float igt1 = ReadFloat(eb + PAL_IGT);
+                        if (float.IsNaN(igt1) || float.IsInfinity(igt1)) continue;
+                        if (igt1 <= 0.1f || igt1 >= 36000f) continue;
+
+                        System.Threading.Thread.Sleep(120);
+
+                        float igt2 = ReadFloat(eb + PAL_IGT);
+                        float delta = igt2 - igt1;
+                        if (delta > 0.05f && delta < 1.0f)
+                            return eb;
                     }
                 }
 

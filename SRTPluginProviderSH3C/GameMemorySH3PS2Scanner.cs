@@ -398,7 +398,7 @@ namespace SRTPluginProviderSH3C
             if (snapshot.Count == 0) return 0;
 
             // â”€â”€ One sleep â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-            System.Threading.Thread.Sleep(400);
+            System.Threading.Thread.Sleep(2000); // 2s sleep for precise delta
 
             // â”€â”€ Pass 2: find ticking float â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             ulong igtHostAddr = 0;
@@ -407,7 +407,7 @@ namespace SRTPluginProviderSH3C
                 float v2 = ReadFloat(kv.Key);
                 float delta = v2 - kv.Value;
                 // IGT ticks at ~1 s/s. In 400ms â†’ delta â‰ˆ 0.4s.
-                if (delta > 0.08f && delta < 0.8f)
+                if (delta > 1.5f && delta < 2.5f) // ~2s at 1 game-sec/real-sec
                 {
                     igtHostAddr = kv.Key;
                     break;
@@ -420,8 +420,8 @@ namespace SRTPluginProviderSH3C
             // If EE_base is page-aligned (ends in 0x000) and IGT_host = EE_base + igtOff,
             // then igtOff & 0xFFF == igtHostAddr & 0xFFF (lower 12 bits must match).
             // Step by 0x1000 starting from the value with those fixed lower bits.
-            const ulong IGT_MIN = 0x1C00000UL;
-            const ulong IGT_MAX = 0x1E00000UL;
+            const ulong IGT_MIN = 0x1D70000UL; // PALFull confirmed: 0x1D80xxx
+            const ulong IGT_MAX = 0x1DA0000UL;
 
             if (igtHostAddr < IGT_MIN) return 0;
 
@@ -574,6 +574,7 @@ namespace SRTPluginProviderSH3C
         ~GameMemorySH3PS2Scanner() => Dispose(false);
     }
 }
+
 
 
 

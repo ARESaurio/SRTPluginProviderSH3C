@@ -185,10 +185,20 @@ namespace SRTPluginProviderSH3C
             palScanRunning = true;
             System.Threading.Tasks.Task.Run(() =>
             {
-                ulong pal = ScanForPALViaIGT(
-                    0x00007FFFFFFFFFFFUL, 0x100000UL,
-                    Marshal.SizeOf<MEMORY_BASIC_INFORMATION>());
-                if (pal != 0) { eeRamBase = pal; if (_palIgtOffset != 0) OFFSET_IGT = _palIgtOffset; }
+                // Retry loop: scan every ~3s until EE RAM found or process gone.
+                while (processHandle != IntPtr.Zero)
+                {
+                    ulong pal = ScanForPALViaIGT(
+                        0x00007FFFFFFFFFFFUL, 0x100000UL,
+                        Marshal.SizeOf<MEMORY_BASIC_INFORMATION>());
+                    if (pal != 0)
+                    {
+                        eeRamBase = pal;
+                        if (_palIgtOffset != 0) OFFSET_IGT = _palIgtOffset;
+                        break;
+                    }
+                    System.Threading.Thread.Sleep(3000); // retry if game not running yet
+                }
                 palScanRunning = false;
             });
         }
@@ -564,5 +574,6 @@ namespace SRTPluginProviderSH3C
         ~GameMemorySH3PS2Scanner() => Dispose(false);
     }
 }
+
 
 

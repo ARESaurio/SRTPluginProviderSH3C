@@ -188,7 +188,7 @@ namespace SRTPluginProviderSH3C
                 ulong pal = ScanForPALViaIGT(
                     0x00007FFFFFFFFFFFUL, 0x100000UL,
                     Marshal.SizeOf<MEMORY_BASIC_INFORMATION>());
-                if (pal != 0) eeRamBase = pal;
+                if (pal != 0) { eeRamBase = pal; if (_palIgtOffset != 0) OFFSET_IGT = _palIgtOffset; }
                 palScanRunning = false;
             });
         }
@@ -564,4 +564,5 @@ namespace SRTPluginProviderSH3C
         ~GameMemorySH3PS2Scanner() => Dispose(false);
     }
 }
+
 

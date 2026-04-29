@@ -1,4 +1,4 @@
-using SRTPluginProviderSH3C.Structs.GameStructs;
+﻿using SRTPluginProviderSH3C.Structs.GameStructs;
 using System;
 using System.Diagnostics;
 using System.Runtime.InteropServices;
@@ -14,11 +14,11 @@ namespace SRTPluginProviderSH3C
     /// that difficulty bytes, HP, and IGT are all within valid ranges.
     /// This avoids false-positives on zeroed or unrelated memory blocks.
     ///
-    /// Source: RetroAchievements Code Notes — Silent Hill 3 (PS2).
+    /// Source: RetroAchievements Code Notes â€” Silent Hill 3 (PS2).
     /// </summary>
     public class GameMemorySH3PS2Scanner : IDisposable
     {
-        // ── Win32 P/Invoke ────────────────────────────────────────────────────
+        // â”€â”€ Win32 P/Invoke â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         [DllImport("kernel32.dll", SetLastError = true)]
         private static extern IntPtr OpenProcess(uint dwDesiredAccess, bool bInheritHandle, uint dwProcessId);
 
@@ -52,11 +52,11 @@ namespace SRTPluginProviderSH3C
         private const uint MEM_COMMIT                = 0x1000;
         private const uint PAGE_READWRITE            = 0x04;
 
-        // ── PS2 EE RAM ────────────────────────────────────────────────────────
+        // â”€â”€ PS2 EE RAM â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         private const ulong EE_RAM_SIZE = 0x2000000UL; // 32 MB
 
-        // ── NTSC-U (USA) Memory Offsets ───────────────────────────────────────
-        // Source: RetroAchievements Code Notes — Silent Hill 3 (USA) SLUS-20707.
+        // â”€â”€ NTSC-U (USA) Memory Offsets â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // Source: RetroAchievements Code Notes â€” Silent Hill 3 (USA) SLUS-20707.
 
         private const ulong USA_HP            = 0x3D4AEC;
         private const ulong USA_IGT           = 0x1D87FEC;
@@ -81,14 +81,14 @@ namespace SRTPluginProviderSH3C
         private const ulong USA_ALESS_TIME    = 0x1D88008;
         private const ulong USA_GOD_TIME      = 0x1D8800C;
 
-        // ── PAL (EU) Memory Offsets ───────────────────────────────────────────
+        // â”€â”€ PAL (EU) Memory Offsets â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         // Confirmed by live diagnostic on SLES-51434 with PCSX2 2.6.3.
         // HP and IGT verified; ammo/stats/area offsets pending confirmation.
         // PAL entity buffer is at a different PS2 physical address than USA.
 
         private const ulong PAL_HP            = 0x45A8F0; // confirmed
         private const ulong PAL_IGT           = 0x1D80EA0; // confirmed
-        // TODO: remaining PAL offsets — pending in-game verification.
+        // TODO: remaining PAL offsets â€” pending in-game verification.
         // Using 0 as sentinel so Refresh() skips them until confirmed.
         private const ulong PAL_PISTOL_CLIP   = 0;
         private const ulong PAL_SHOTGUN_CLIP  = 0;
@@ -111,7 +111,7 @@ namespace SRTPluginProviderSH3C
         private const ulong PAL_ALESS_TIME    = 0;
         private const ulong PAL_GOD_TIME      = 0;
 
-        // ── Active offset aliases (set after region detection) ────────────────
+        // â”€â”€ Active offset aliases (set after region detection) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         private ulong OFFSET_HP;          private ulong OFFSET_IGT;
         private ulong OFFSET_PISTOL_CLIP; private ulong OFFSET_SHOTGUN_CLIP;
         private ulong OFFSET_SMG_CLIP;    private ulong OFFSET_PISTOL_RESERVE;
@@ -125,7 +125,7 @@ namespace SRTPluginProviderSH3C
         private ulong OFFSET_LEONARD_TIME; private ulong OFFSET_ALESSA_TIME;
         private ulong OFFSET_GOD_TIME;
 
-        // ── State ─────────────────────────────────────────────────────────────
+        // â”€â”€ State â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         private IntPtr            processHandle   = IntPtr.Zero;
         private uint              processId;
         private long              _eeRamBase      = 0;  // backing; use Interlocked
@@ -143,7 +143,7 @@ namespace SRTPluginProviderSH3C
         public bool ProcessRunning =>
             processHandle != IntPtr.Zero && !IsProcessExited();
 
-        // ── Init ──────────────────────────────────────────────────────────────
+        // â”€â”€ Init â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
         internal GameMemorySH3PS2Scanner()
         {
@@ -164,7 +164,7 @@ namespace SRTPluginProviderSH3C
             processFound = processHandle != IntPtr.Zero;
             if (!processFound) return;
 
-            // Pass 1: USA — fast synchronous scan (AoB, no sleep).
+            // Pass 1: USA â€” fast synchronous scan (AoB, no sleep).
             ApplyOffsets(pal: false);
             ulong usa = ScanForHP(
                 0x00007FFFFFFFFFFFUL, 0x100000UL,
@@ -178,7 +178,7 @@ namespace SRTPluginProviderSH3C
                 return;
             }
 
-            // Pass 2: PAL — slow IGT-delta scan, run on background thread
+            // Pass 2: PAL â€” slow IGT-delta scan, run on background thread
             // so SRTHost is not blocked during startup.
             ApplyOffsets(pal: true);
             isPalPS2      = true;
@@ -193,51 +193,51 @@ namespace SRTPluginProviderSH3C
             });
         }
 
-        // ── Refresh ───────────────────────────────────────────────────────────
+        // â”€â”€ Refresh â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
         internal IGameMemorySH3PS2 Refresh()
         {
             // If USA scan found nothing and PAL background scan is complete,
             // the eeRamBase will have been set by the background Task.
-            // Do NOT call FindEERAMBase() synchronously here — it would block.
+            // Do NOT call FindEERAMBase() synchronously here â€” it would block.
 
             if (eeRamBase != 0)
             {
-                // ── Player HP ────────────────────────────────────────────
+                // â”€â”€ Player HP â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                 float hp = ReadFloat(eeRamBase + OFFSET_HP);
                 gameMemoryValues._player = new GamePlayer(hp);
 
-                // ── In-Game Time ─────────────────────────────────────────
+                // â”€â”€ In-Game Time â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                 gameMemoryValues._igt = ReadFloat(eeRamBase + OFFSET_IGT);
 
-                // ── Weapons: clip (skipped when offset not confirmed for region) ──
+                // â”€â”€ Weapons: clip (skipped when offset not confirmed for region) â”€â”€
                 if (OFFSET_PISTOL_CLIP  != 0) gameMemoryValues._pistolClip    = ReadInt16(eeRamBase + OFFSET_PISTOL_CLIP);
                 if (OFFSET_SHOTGUN_CLIP != 0) gameMemoryValues._shotgunClip   = ReadInt16(eeRamBase + OFFSET_SHOTGUN_CLIP);
                 if (OFFSET_SMG_CLIP     != 0) gameMemoryValues._smgClip       = ReadInt16(eeRamBase + OFFSET_SMG_CLIP);
 
-                // ── Weapons: reserve ─────────────────────────────────────
+                // â”€â”€ Weapons: reserve â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                 if (OFFSET_PISTOL_RESERVE  != 0) gameMemoryValues._pistolReserve  = ReadInt16(eeRamBase + OFFSET_PISTOL_RESERVE);
                 if (OFFSET_SHOTGUN_RESERVE != 0) gameMemoryValues._shotgunReserve = ReadInt16(eeRamBase + OFFSET_SHOTGUN_RESERVE);
                 if (OFFSET_SMG_RESERVE     != 0) gameMemoryValues._smgReserve     = ReadInt16(eeRamBase + OFFSET_SMG_RESERVE);
 
-                // ── Items ─────────────────────────────────────────────────
+                // â”€â”€ Items â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                 if (OFFSET_BEEF_JERKY != 0) gameMemoryValues._beefJerky = ReadInt16(eeRamBase + OFFSET_BEEF_JERKY);
 
-                // ── Run Stats ─────────────────────────────────────────────
+                // â”€â”€ Run Stats â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                 if (OFFSET_SAVES    != 0) gameMemoryValues._saveCount     = ReadByte(eeRamBase + OFFSET_SAVES);
                 if (OFFSET_ITEMS    != 0) gameMemoryValues._itemCount     = ReadInt16(eeRamBase + OFFSET_ITEMS);
                 if (OFFSET_SHOOTING != 0) gameMemoryValues._shootingKills = ReadInt16(eeRamBase + OFFSET_SHOOTING);
                 if (OFFSET_MELEE    != 0) gameMemoryValues._meleeKills    = ReadInt16(eeRamBase + OFFSET_MELEE);
                 if (OFFSET_DAMAGE   != 0) gameMemoryValues._damageTaken   = ReadInt16(eeRamBase + OFFSET_DAMAGE);
 
-                // ── Difficulty ────────────────────────────────────────────
+                // â”€â”€ Difficulty â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                 if (OFFSET_ACTION_DIFF != 0) gameMemoryValues._actionDifficulty = ReadByte(eeRamBase + OFFSET_ACTION_DIFF);
                 if (OFFSET_RIDDLE_DIFF != 0) gameMemoryValues._riddleDifficulty = ReadByte(eeRamBase + OFFSET_RIDDLE_DIFF);
 
-                // ── Game Area ─────────────────────────────────────────────
+                // â”€â”€ Game Area â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                 if (OFFSET_GAME_AREA != 0) gameMemoryValues._gameArea = ReadByte(eeRamBase + OFFSET_GAME_AREA);
 
-                // ── Boss Fight Times ──────────────────────────────────────
+                // â”€â”€ Boss Fight Times â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
                 if (OFFSET_WORM_TIME       != 0) gameMemoryValues._wormTime       = ReadFloat(eeRamBase + OFFSET_WORM_TIME);
                 if (OFFSET_MISSIONARY_TIME != 0) gameMemoryValues._missionaryTime = ReadFloat(eeRamBase + OFFSET_MISSIONARY_TIME);
                 if (OFFSET_LEONARD_TIME    != 0) gameMemoryValues._leonardTime    = ReadFloat(eeRamBase + OFFSET_LEONARD_TIME);
@@ -249,7 +249,7 @@ namespace SRTPluginProviderSH3C
             return gameMemoryValues;
         }
 
-        // ── EE RAM Detection ──────────────────────────────────────────────────
+        // â”€â”€ EE RAM Detection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
         // HP=100.0f in little-endian IEEE-754: bytes [0x00, 0x00, 0xC8, 0x42].
         // This is Heather's full health value, present at game start and on resets.
@@ -258,7 +258,7 @@ namespace SRTPluginProviderSH3C
         /// <summary>
         /// Finds the PS2 EE RAM base by scanning PCSX2's committed memory for
         /// Heather's full HP value (100.0f = [00 00 C8 42]) at 4-byte aligned
-        /// positions, then computing candidate = hit_address − HP_OFFSET.
+        /// positions, then computing candidate = hit_address âˆ’ HP_OFFSET.
         ///
         /// This approach works because:
         ///   - The EE RAM may not start at the beginning of any VirtualQueryEx
@@ -336,7 +336,7 @@ namespace SRTPluginProviderSH3C
 
         /// <summary>
         /// PAL-specific scan. PCSX2 2.x commits EE RAM as many tiny VirtualQueryEx
-        /// segments within a single large virtual reservation — RegionSize cannot be
+        /// segments within a single large virtual reservation â€” RegionSize cannot be
         /// used to detect the full 32 MB EE RAM. Instead, collect unique AllocBases
         /// from all committed readable segments, then for each allocation probe
         /// page-aligned EE base candidates using ReadProcessMemory (which spans
@@ -354,7 +354,7 @@ namespace SRTPluginProviderSH3C
             // That float's host address = EE_base + IGT_PS2_offset.
             // We then back-compute EE_base by aligning to 4 KB (page boundary).
 
-            // ── Pass 1: snapshot ──────────────────────────────────────────────
+            // â”€â”€ Pass 1: snapshot â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             // Read every 4-byte float in every committed RW segment.
             var snapshot = new System.Collections.Generic.Dictionary<ulong, float>();
             ulong addr = 0;
@@ -362,13 +362,14 @@ namespace SRTPluginProviderSH3C
             {
                 if (VirtualQueryEx(processHandle, addr, out var mbi, (uint)mbiSize) == 0) break;
 
-                // Accept any writable committed segment (RW=0x04 or EXECUTE_RW=0x40).
-                const uint WRITABLE_MASK = 0x44U;
+                // Match PALFull.ps1 filter: segments 1MB-96MB, PAGE_READWRITE (0x04).
+                // The PAL IGT lives in a segment >= 1MB â€” smaller segments miss it.
                 if (mbi.State == MEM_COMMIT &&
-                    (mbi.Protect & WRITABLE_MASK) != 0 &&
-                    mbi.RegionSize >= 4)
+                    mbi.RegionSize >= 0x100000UL &&
+                    mbi.RegionSize <= 0x6000000UL &&
+                    (mbi.Protect == PAGE_READWRITE || (mbi.Protect & PAGE_READWRITE) != 0))
                 {
-                    int readLen = (int)Math.Min(mbi.RegionSize, 0x80000UL); // 512 KB max per seg
+                    int readLen = (int)Math.Min(mbi.RegionSize, 0x2000000UL); // 32 MB max
                     var buf = new byte[readLen];
                     ReadProcessMemory(processHandle, mbi.BaseAddress, buf, readLen, out int br);
                     for (int i = 0; i <= br - 4; i += 4)
@@ -386,16 +387,16 @@ namespace SRTPluginProviderSH3C
 
             if (snapshot.Count == 0) return 0;
 
-            // ── One sleep ────────────────────────────────────────────────────
+            // â”€â”€ One sleep â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             System.Threading.Thread.Sleep(400);
 
-            // ── Pass 2: find ticking float ────────────────────────────────────
+            // â”€â”€ Pass 2: find ticking float â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             ulong igtHostAddr = 0;
             foreach (var kv in snapshot)
             {
                 float v2 = ReadFloat(kv.Key);
                 float delta = v2 - kv.Value;
-                // IGT ticks at ~1 s/s. In 400ms → delta ≈ 0.4s.
+                // IGT ticks at ~1 s/s. In 400ms â†’ delta â‰ˆ 0.4s.
                 if (delta > 0.08f && delta < 0.8f)
                 {
                     igtHostAddr = kv.Key;
@@ -405,7 +406,7 @@ namespace SRTPluginProviderSH3C
 
             if (igtHostAddr == 0) return 0;
 
-            // ── Compute EE base ───────────────────────────────────────────────
+            // â”€â”€ Compute EE base â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
             // If EE_base is page-aligned (ends in 0x000) and IGT_host = EE_base + igtOff,
             // then igtOff & 0xFFF == igtHostAddr & 0xFFF (lower 12 bits must match).
             // Step by 0x1000 starting from the value with those fixed lower bits.
@@ -469,7 +470,7 @@ namespace SRTPluginProviderSH3C
         /// <summary>
         /// Validates a candidate EE RAM base address by checking that SH3-specific
         /// fields are within their known valid ranges.
-        /// HP is intentionally NOT checked here — the AoB scan already guarantees
+        /// HP is intentionally NOT checked here â€” the AoB scan already guarantees
         /// it equals 100.0f at the expected offset.
         /// </summary>
         private bool VerifyUSABlock(ulong baseAddr)
@@ -503,7 +504,7 @@ namespace SRTPluginProviderSH3C
             return delta > 0.05f && delta < 1.0f;
         }
 
-        // ── Low-level reads ───────────────────────────────────────────────────
+        // â”€â”€ Low-level reads â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
         private byte ReadByte(ulong address)
         {
@@ -526,7 +527,7 @@ namespace SRTPluginProviderSH3C
             return read == 4 ? BitConverter.ToSingle(buf, 0) : 0f;
         }
 
-        // ── Helpers ───────────────────────────────────────────────────────────
+        // â”€â”€ Helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
         private bool IsProcessExited()
         {
@@ -546,7 +547,7 @@ namespace SRTPluginProviderSH3C
             HasScanned   = false;
         }
 
-        // ── IDisposable ───────────────────────────────────────────────────────
+        // â”€â”€ IDisposable â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
         private bool disposedValue;
 
         protected virtual void Dispose(bool disposing)
@@ -563,3 +564,4 @@ namespace SRTPluginProviderSH3C
         ~GameMemorySH3PS2Scanner() => Dispose(false);
     }
 }
+

@@ -179,39 +179,39 @@ namespace SRTPluginProviderSH3C
                 // ── In-Game Time ─────────────────────────────────────────
                 gameMemoryValues._igt = ReadFloat(eeRamBase + OFFSET_IGT);
 
-                // ── Weapons: clip ─────────────────────────────────────────
-                gameMemoryValues._pistolClip    = ReadInt16(eeRamBase + OFFSET_PISTOL_CLIP);
-                gameMemoryValues._shotgunClip   = ReadInt16(eeRamBase + OFFSET_SHOTGUN_CLIP);
-                gameMemoryValues._smgClip       = ReadInt16(eeRamBase + OFFSET_SMG_CLIP);
+                // ── Weapons: clip (skipped when offset not confirmed for region) ──
+                if (OFFSET_PISTOL_CLIP  != 0) gameMemoryValues._pistolClip    = ReadInt16(eeRamBase + OFFSET_PISTOL_CLIP);
+                if (OFFSET_SHOTGUN_CLIP != 0) gameMemoryValues._shotgunClip   = ReadInt16(eeRamBase + OFFSET_SHOTGUN_CLIP);
+                if (OFFSET_SMG_CLIP     != 0) gameMemoryValues._smgClip       = ReadInt16(eeRamBase + OFFSET_SMG_CLIP);
 
                 // ── Weapons: reserve ─────────────────────────────────────
-                gameMemoryValues._pistolReserve  = ReadInt16(eeRamBase + OFFSET_PISTOL_RESERVE);
-                gameMemoryValues._shotgunReserve = ReadInt16(eeRamBase + OFFSET_SHOTGUN_RESERVE);
-                gameMemoryValues._smgReserve     = ReadInt16(eeRamBase + OFFSET_SMG_RESERVE);
+                if (OFFSET_PISTOL_RESERVE  != 0) gameMemoryValues._pistolReserve  = ReadInt16(eeRamBase + OFFSET_PISTOL_RESERVE);
+                if (OFFSET_SHOTGUN_RESERVE != 0) gameMemoryValues._shotgunReserve = ReadInt16(eeRamBase + OFFSET_SHOTGUN_RESERVE);
+                if (OFFSET_SMG_RESERVE     != 0) gameMemoryValues._smgReserve     = ReadInt16(eeRamBase + OFFSET_SMG_RESERVE);
 
                 // ── Items ─────────────────────────────────────────────────
-                gameMemoryValues._beefJerky = ReadInt16(eeRamBase + OFFSET_BEEF_JERKY);
+                if (OFFSET_BEEF_JERKY != 0) gameMemoryValues._beefJerky = ReadInt16(eeRamBase + OFFSET_BEEF_JERKY);
 
                 // ── Run Stats ─────────────────────────────────────────────
-                gameMemoryValues._saveCount     = ReadByte(eeRamBase + OFFSET_SAVES);
-                gameMemoryValues._itemCount     = ReadInt16(eeRamBase + OFFSET_ITEMS);
-                gameMemoryValues._shootingKills = ReadInt16(eeRamBase + OFFSET_SHOOTING);
-                gameMemoryValues._meleeKills    = ReadInt16(eeRamBase + OFFSET_MELEE);
-                gameMemoryValues._damageTaken   = ReadInt16(eeRamBase + OFFSET_DAMAGE);
+                if (OFFSET_SAVES    != 0) gameMemoryValues._saveCount     = ReadByte(eeRamBase + OFFSET_SAVES);
+                if (OFFSET_ITEMS    != 0) gameMemoryValues._itemCount     = ReadInt16(eeRamBase + OFFSET_ITEMS);
+                if (OFFSET_SHOOTING != 0) gameMemoryValues._shootingKills = ReadInt16(eeRamBase + OFFSET_SHOOTING);
+                if (OFFSET_MELEE    != 0) gameMemoryValues._meleeKills    = ReadInt16(eeRamBase + OFFSET_MELEE);
+                if (OFFSET_DAMAGE   != 0) gameMemoryValues._damageTaken   = ReadInt16(eeRamBase + OFFSET_DAMAGE);
 
                 // ── Difficulty ────────────────────────────────────────────
-                gameMemoryValues._actionDifficulty = ReadByte(eeRamBase + OFFSET_ACTION_DIFF);
-                gameMemoryValues._riddleDifficulty = ReadByte(eeRamBase + OFFSET_RIDDLE_DIFF);
+                if (OFFSET_ACTION_DIFF != 0) gameMemoryValues._actionDifficulty = ReadByte(eeRamBase + OFFSET_ACTION_DIFF);
+                if (OFFSET_RIDDLE_DIFF != 0) gameMemoryValues._riddleDifficulty = ReadByte(eeRamBase + OFFSET_RIDDLE_DIFF);
 
                 // ── Game Area ─────────────────────────────────────────────
-                gameMemoryValues._gameArea = ReadByte(eeRamBase + OFFSET_GAME_AREA);
+                if (OFFSET_GAME_AREA != 0) gameMemoryValues._gameArea = ReadByte(eeRamBase + OFFSET_GAME_AREA);
 
                 // ── Boss Fight Times ──────────────────────────────────────
-                gameMemoryValues._wormTime       = ReadFloat(eeRamBase + OFFSET_WORM_TIME);
-                gameMemoryValues._missionaryTime = ReadFloat(eeRamBase + OFFSET_MISSIONARY_TIME);
-                gameMemoryValues._leonardTime    = ReadFloat(eeRamBase + OFFSET_LEONARD_TIME);
-                gameMemoryValues._alessaTime     = ReadFloat(eeRamBase + OFFSET_ALESSA_TIME);
-                gameMemoryValues._godTime        = ReadFloat(eeRamBase + OFFSET_GOD_TIME);
+                if (OFFSET_WORM_TIME       != 0) gameMemoryValues._wormTime       = ReadFloat(eeRamBase + OFFSET_WORM_TIME);
+                if (OFFSET_MISSIONARY_TIME != 0) gameMemoryValues._missionaryTime = ReadFloat(eeRamBase + OFFSET_MISSIONARY_TIME);
+                if (OFFSET_LEONARD_TIME    != 0) gameMemoryValues._leonardTime    = ReadFloat(eeRamBase + OFFSET_LEONARD_TIME);
+                if (OFFSET_ALESSA_TIME     != 0) gameMemoryValues._alessaTime     = ReadFloat(eeRamBase + OFFSET_ALESSA_TIME);
+                if (OFFSET_GOD_TIME        != 0) gameMemoryValues._godTime        = ReadFloat(eeRamBase + OFFSET_GOD_TIME);
             }
 
             HasScanned = true;
@@ -350,11 +350,21 @@ namespace SRTPluginProviderSH3C
         private bool VerifyPALBlock(ulong baseAddr)
         {
             // PAL Area/Difficulty offsets not yet confirmed.
-            // Validate with PAL IGT: must be a positive, realistic value.
-            float igt = ReadFloat(baseAddr + PAL_IGT);
-            if (float.IsNaN(igt) || float.IsInfinity(igt)) return false;
-            if (igt <= 0f || igt >= 36000f) return false;
-            return true;
+            // Use a dual IGT read (120ms apart) to confirm the timer is ticking.
+            // This eliminates false positives where a random float happens to
+            // be in the valid range at offset PAL_IGT.
+            float igt1 = ReadFloat(baseAddr + PAL_IGT);
+            if (float.IsNaN(igt1) || float.IsInfinity(igt1)) return false;
+            if (igt1 <= 0f || igt1 >= 36000f) return false;
+
+            System.Threading.Thread.Sleep(120);
+
+            float igt2 = ReadFloat(baseAddr + PAL_IGT);
+            if (float.IsNaN(igt2) || float.IsInfinity(igt2)) return false;
+
+            // IGT must have increased (game is running) and by a plausible amount.
+            float delta = igt2 - igt1;
+            return delta > 0.05f && delta < 1.0f;
         }
 
         // ── Low-level reads ───────────────────────────────────────────────────

@@ -404,22 +404,24 @@ namespace SRTPluginProviderSH3C
             if (igtHostAddr == 0) return 0;
 
             // ── Compute EE base ───────────────────────────────────────────────
-            // EE base must be page-aligned and below the IGT host address.
-            // Try progressively larger PS2 offsets (IGT lives in upper EE RAM).
-            // For SH3 PAL the IGT is near 0x1D80000 (just above 29 MB).
-            // We search offsets in [0x1C00000, 0x1E00000] (28-30 MB range).
+            // If EE_base is page-aligned (ends in 0x000) and IGT_host = EE_base + igtOff,
+            // then igtOff & 0xFFF == igtHostAddr & 0xFFF (lower 12 bits must match).
+            // Step by 0x1000 starting from the value with those fixed lower bits.
             const ulong IGT_MIN = 0x1C00000UL;
             const ulong IGT_MAX = 0x1E00000UL;
 
             if (igtHostAddr < IGT_MIN) return 0;
 
-            for (ulong igtOff = IGT_MIN; igtOff <= IGT_MAX; igtOff += 0x1000UL)
-            {
-                if (igtHostAddr < igtOff) continue;
-                ulong candidate = igtHostAddr - igtOff;
-                if ((candidate & 0xFFFUL) != 0) continue; // must be page-aligned
+            ulong lower   = igtHostAddr & 0xFFFUL;            // e.g. 0x518
+            ulong igtOff0 = (IGT_MIN & ~0xFFFUL) | lower;    // first candidate in range
+            if (igtOff0 < IGT_MIN) igtOff0 += 0x1000UL;
 
-                // Verify candidate by re-reading IGT and checking it's still ticking.
+            for (ulong igtOff = igtOff0; igtOff <= IGT_MAX; igtOff += 0x1000UL)
+            {
+                if (igtHostAddr < igtOff) break;
+                ulong candidate = igtHostAddr - igtOff;
+                // candidate is guaranteed page-aligned by construction.
+
                 float chk1 = ReadFloat(candidate + igtOff);
                 if (chk1 < 0.5f || chk1 >= 36000f || float.IsNaN(chk1)) continue;
 

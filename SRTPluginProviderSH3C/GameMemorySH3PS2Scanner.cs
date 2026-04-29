@@ -343,18 +343,19 @@ namespace SRTPluginProviderSH3C
         /// committed pages within one allocation). If PAL_IGT reads a valid, ticking
         /// float, we found the PAL EE RAM. Does NOT require HP=100.
         /// </summary>
+        // Discovered PAL IGT offset (dynamic per session, found at scan time).
+        private ulong _palIgtOffset = 0;
+
         private ulong ScanForPALViaIGT(ulong maxAddr, ulong minRegion, int mbiSize)
         {
-            // Key insight: in PCSX2 2.x the EE RAM start (our "EE base") always
-            // coincides exactly with a VirtualQueryEx segment's BaseAddress.
-            // This was verified empirically: VQDiag showed BaseAddress=EE base=0x00007FF71006B000.
-            //
-            // Strategy: enumerate all committed PAGE_READWRITE segment BaseAddresses,
-            // try reading PAL_IGT from each via ReadProcessMemory (which crosses
-            // committed pages in the same reservation), snapshot values in range,
-            // single 300ms sleep, then delta-check. Fast and non-blocking.
+            // The PAL IGT PS2 physical offset is NOT constant between PCSX2 sessions.
+            // We find it dynamically: snapshot all committed RW floats, sleep 400ms,
+            // re-read, and look for a float that increased by ~0.08-0.8s (timer tick).
+            // That float's host address = EE_base + IGT_PS2_offset.
+            // We then back-compute EE_base by aligning to 4 KB (page boundary).
 
             // ── Pass 1: snapshot ──────────────────────────────────────────────
+            // Read every 4-byte float in every committed RW segment.
             var snapshot = new System.Collections.Generic.Dictionary<ulong, float>();
             ulong addr = 0;
             while (addr < maxAddr)
@@ -362,12 +363,18 @@ namespace SRTPluginProviderSH3C
                 if (VirtualQueryEx(processHandle, addr, out var mbi, (uint)mbiSize) == 0) break;
 
                 if (mbi.State == MEM_COMMIT &&
-                    (mbi.Protect == PAGE_READWRITE || (mbi.Protect & PAGE_READWRITE) != 0))
+                    (mbi.Protect == PAGE_READWRITE || (mbi.Protect & PAGE_READWRITE) != 0) &&
+                    mbi.RegionSize >= 4 && mbi.RegionSize <= 0x800000UL) // 8 MB max to avoid JIT
                 {
-                    ulong eb = mbi.BaseAddress;
-                    float v = ReadFloat(eb + PAL_IGT);
-                    if (!float.IsNaN(v) && !float.IsInfinity(v) && v > 0.1f && v < 36000f)
-                        snapshot[eb] = v;
+                    int readLen = (int)Math.Min(mbi.RegionSize, 0x100000UL); // 1 MB chunks
+                    var buf = new byte[readLen];
+                    ReadProcessMemory(processHandle, mbi.BaseAddress, buf, readLen, out int br);
+                    for (int i = 0; i <= br - 4; i += 4)
+                    {
+                        float v = BitConverter.ToSingle(buf, i);
+                        if (!float.IsNaN(v) && !float.IsInfinity(v) && v > 0.5f && v < 36000f)
+                            snapshot[mbi.BaseAddress + (ulong)i] = v;
+                    }
                 }
 
                 ulong nx = mbi.BaseAddress + Math.Max(mbi.RegionSize, 1UL);
@@ -378,16 +385,52 @@ namespace SRTPluginProviderSH3C
             if (snapshot.Count == 0) return 0;
 
             // ── One sleep ────────────────────────────────────────────────────
-            System.Threading.Thread.Sleep(300);
+            System.Threading.Thread.Sleep(400);
 
-            // ── Pass 2: delta check ───────────────────────────────────────────
-            // Real PAL IGT increments at ~1 s/s. In 300 ms → delta ≈ 0.3 s.
+            // ── Pass 2: find ticking float ────────────────────────────────────
+            ulong igtHostAddr = 0;
             foreach (var kv in snapshot)
             {
-                float v2 = ReadFloat(kv.Key + PAL_IGT);
+                float v2 = ReadFloat(kv.Key);
                 float delta = v2 - kv.Value;
-                if (delta > 0.08f && delta < 1.0f)
-                    return kv.Key;
+                // IGT ticks at ~1 s/s. In 400ms → delta ≈ 0.4s.
+                if (delta > 0.08f && delta < 0.8f)
+                {
+                    igtHostAddr = kv.Key;
+                    break;
+                }
+            }
+
+            if (igtHostAddr == 0) return 0;
+
+            // ── Compute EE base ───────────────────────────────────────────────
+            // EE base must be page-aligned and below the IGT host address.
+            // Try progressively larger PS2 offsets (IGT lives in upper EE RAM).
+            // For SH3 PAL the IGT is near 0x1D80000 (just above 29 MB).
+            // We search offsets in [0x1C00000, 0x1E00000] (28-30 MB range).
+            const ulong IGT_MIN = 0x1C00000UL;
+            const ulong IGT_MAX = 0x1E00000UL;
+
+            if (igtHostAddr < IGT_MIN) return 0;
+
+            for (ulong igtOff = IGT_MIN; igtOff <= IGT_MAX; igtOff += 0x1000UL)
+            {
+                if (igtHostAddr < igtOff) continue;
+                ulong candidate = igtHostAddr - igtOff;
+                if ((candidate & 0xFFFUL) != 0) continue; // must be page-aligned
+
+                // Verify candidate by re-reading IGT and checking it's still ticking.
+                float chk1 = ReadFloat(candidate + igtOff);
+                if (chk1 < 0.5f || chk1 >= 36000f || float.IsNaN(chk1)) continue;
+
+                System.Threading.Thread.Sleep(120);
+                float chk2 = ReadFloat(candidate + igtOff);
+                float d = chk2 - chk1;
+                if (d > 0.05f && d < 0.5f)
+                {
+                    _palIgtOffset = igtOff;
+                    return candidate;
+                }
             }
             return 0;
         }

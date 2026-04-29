@@ -304,46 +304,50 @@ namespace SRTPluginProviderSH3C
         }
 
         /// <summary>
-        /// PAL-specific scan: walks all committed memory and, for every page-aligned
-        /// address that could be an EE base (given PAL_IGT offset), reads the float
-        /// there twice (120 ms apart) and accepts it if it increased (timer ticking).
-        /// Does NOT require HP=100, so it works at any health value.
+        /// PAL-specific scan. PCSX2 2.x commits EE RAM as many tiny VirtualQueryEx
+        /// segments within a single large virtual reservation — RegionSize cannot be
+        /// used to detect the full 32 MB EE RAM. Instead, collect unique AllocBases
+        /// from all committed readable segments, then for each allocation probe
+        /// page-aligned EE base candidates using ReadProcessMemory (which spans
+        /// committed pages within one allocation). If PAL_IGT reads a valid, ticking
+        /// float, we found the PAL EE RAM. Does NOT require HP=100.
         /// </summary>
         private ulong ScanForPALViaIGT(ulong maxAddr, ulong minRegion, int mbiSize)
         {
-            ulong address = 0;
-            while (address < maxAddr)
+            // Collect unique AllocBases from all committed readable segments.
+            var allocBases = new System.Collections.Generic.HashSet<ulong>();
+            ulong addr = 0;
+            while (addr < maxAddr)
             {
-                if (VirtualQueryEx(processHandle, address, out var mbi, (uint)mbiSize) == 0)
-                    break;
-
+                if (VirtualQueryEx(processHandle, addr, out var mbi, (uint)mbiSize) == 0) break;
                 if (mbi.State == MEM_COMMIT &&
-                    mbi.RegionSize >= PAL_IGT &&         // must contain PAL_IGT offset
-                    mbi.RegionSize <= 0x8000000UL &&     // skip huge JIT reservations (>128MB)
                     (mbi.Protect == PAGE_READWRITE || (mbi.Protect & PAGE_READWRITE) != 0))
+                    allocBases.Add(mbi.AllocationBase);
+                ulong nx = mbi.BaseAddress + Math.Max(mbi.RegionSize, 1UL);
+                if (nx <= addr) break;
+                addr = nx;
+            }
+
+            // For each allocation, probe page-aligned EE base candidates.
+            // Scan up to 64 MB from AllocBase (covers PCSX2 EE RAM offsets).
+            const ulong SCAN_RANGE = 0x4000000UL;
+            const ulong PAGE       = 0x1000UL;
+
+            foreach (ulong allocBase in allocBases)
+            {
+                for (ulong eb = allocBase; eb < allocBase + SCAN_RANGE; eb += PAGE)
                 {
-                    // Step through page-aligned bases within this region.
-                    ulong regionEnd = mbi.BaseAddress + mbi.RegionSize;
-                    for (ulong eb = (mbi.BaseAddress + 0xFFFUL) & ~0xFFFUL;
-                         eb + PAL_IGT + 4 < regionEnd;
-                         eb += 0x1000UL)
-                    {
-                        float igt1 = ReadFloat(eb + PAL_IGT);
-                        if (float.IsNaN(igt1) || float.IsInfinity(igt1)) continue;
-                        if (igt1 <= 0.1f || igt1 >= 36000f) continue;
+                    float igt1 = ReadFloat(eb + PAL_IGT);
+                    if (float.IsNaN(igt1) || float.IsInfinity(igt1) ||
+                        igt1 <= 0.1f || igt1 >= 36000f) continue;
 
-                        System.Threading.Thread.Sleep(120);
+                    System.Threading.Thread.Sleep(150);
 
-                        float igt2 = ReadFloat(eb + PAL_IGT);
-                        float delta = igt2 - igt1;
-                        if (delta > 0.05f && delta < 1.0f)
-                            return eb;
-                    }
+                    float igt2 = ReadFloat(eb + PAL_IGT);
+                    float delta = igt2 - igt1;
+                    if (delta > 0.05f && delta < 1.5f)
+                        return eb;
                 }
-
-                ulong next = mbi.BaseAddress + Math.Max(mbi.RegionSize, 1UL);
-                if (next <= address) break;
-                address = next;
             }
             return 0;
         }

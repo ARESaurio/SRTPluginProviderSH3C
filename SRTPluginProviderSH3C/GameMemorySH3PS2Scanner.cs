@@ -359,26 +359,38 @@ namespace SRTPluginProviderSH3C
                 addr = nx;
             }
 
-            // For each allocation, probe page-aligned EE base candidates.
-            // Scan up to 64 MB from AllocBase (covers PCSX2 EE RAM offsets).
-            const ulong SCAN_RANGE = 0x4000000UL;
+            const ulong SCAN_RANGE = 0x4000000UL; // 64 MB window per allocation
             const ulong PAGE       = 0x1000UL;
 
+            // ── Pass 1: snapshot ─────────────────────────────────────────────
+            // Collect all page-aligned candidates where IGT offset holds a
+            // plausible timer value. No sleeping here — just fast reads.
+            var snapshot = new System.Collections.Generic.Dictionary<ulong, float>();
             foreach (ulong allocBase in allocBases)
             {
                 for (ulong eb = allocBase; eb < allocBase + SCAN_RANGE; eb += PAGE)
                 {
-                    float igt1 = ReadFloat(eb + PAL_IGT);
-                    if (float.IsNaN(igt1) || float.IsInfinity(igt1) ||
-                        igt1 <= 0.1f || igt1 >= 36000f) continue;
-
-                    System.Threading.Thread.Sleep(150);
-
-                    float igt2 = ReadFloat(eb + PAL_IGT);
-                    float delta = igt2 - igt1;
-                    if (delta > 0.05f && delta < 1.5f)
-                        return eb;
+                    float v = ReadFloat(eb + PAL_IGT);
+                    if (!float.IsNaN(v) && !float.IsInfinity(v) &&
+                        v > 0.1f && v < 36000f)
+                        snapshot[eb] = v;
                 }
+            }
+
+            if (snapshot.Count == 0) return 0;
+
+            // ── One sleep ────────────────────────────────────────────────────
+            System.Threading.Thread.Sleep(300);
+
+            // ── Pass 2: delta check ──────────────────────────────────────────
+            // The real IGT increments at ~1 s/s. In 300 ms it should rise
+            // by 0.15–0.45 s. Any smaller delta is a coincidental static float.
+            foreach (var kv in snapshot)
+            {
+                float v2 = ReadFloat(kv.Key + PAL_IGT);
+                float delta = v2 - kv.Value;
+                if (delta > 0.08f && delta < 1.0f)
+                    return kv.Key;
             }
             return 0;
         }

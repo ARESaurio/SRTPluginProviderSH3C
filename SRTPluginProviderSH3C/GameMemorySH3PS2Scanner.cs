@@ -364,88 +364,61 @@ namespace SRTPluginProviderSH3C
             // That float's host address = EE_base + IGT_PS2_offset.
             // We then back-compute EE_base by aligning to 4 KB (page boundary).
 
-            // â”€â”€ Pass 1: snapshot â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-            // Read every 4-byte float in every committed RW segment.
-            var snapshot = new System.Collections.Generic.Dictionary<ulong, float>();
-            ulong addr = 0;
-            while (addr < maxAddr)
-            {
+            // -- Pass 1: read qualifying blocks (dual-buffer approach) ─────────
+            var blocks = new System.Collections.Generic.List<System.Tuple<ulong, byte[]>>();
+            ulong addr = 0x00007F0000000000UL;
+            while (addr < maxAddr) {
                 if (VirtualQueryEx(processHandle, addr, out var mbi, (uint)mbiSize) == 0) break;
-
-                // Match PALFull.ps1 filter: segments 1MB-96MB, PAGE_READWRITE (0x04).
-                // The PAL IGT lives in a segment >= 1MB â€” smaller segments miss it.
-                if (mbi.State == MEM_COMMIT &&
-                    mbi.RegionSize >= 0x100000UL &&
-                    mbi.RegionSize <= 0x6000000UL &&
-                    (mbi.Protect == PAGE_READWRITE || (mbi.Protect & PAGE_READWRITE) != 0))
-                {
-                    int readLen = (int)Math.Min(mbi.RegionSize, 0x2000000UL); // 32 MB max
-                    var buf = new byte[readLen];
-                    ReadProcessMemory(processHandle, mbi.BaseAddress, buf, readLen, out int br);
-                    for (int i = 0; i <= br - 4; i += 4)
-                    {
-                        float v = BitConverter.ToSingle(buf, i);
-                        if (!float.IsNaN(v) && !float.IsInfinity(v) && v > 1.0f && v < 36000f)
-                            snapshot[mbi.BaseAddress + (ulong)i] = v;
-                    }
+                if (mbi.State == MEM_COMMIT && mbi.RegionSize >= 0x100000UL && mbi.RegionSize <= 0x6000000UL &&
+                    (mbi.Protect == PAGE_READWRITE || (mbi.Protect & PAGE_READWRITE) != 0)) {
+                    int rLen = (int)Math.Min(mbi.RegionSize, 0x2000000UL);
+                    var buf1 = new byte[rLen];
+                    ReadProcessMemory(processHandle, mbi.BaseAddress, buf1, rLen, out int _);
+                    blocks.Add(System.Tuple.Create(mbi.BaseAddress, buf1));
                 }
-
                 ulong nx = mbi.BaseAddress + Math.Max(mbi.RegionSize, 1UL);
-                if (nx <= addr) break;
-                addr = nx;
+                if (nx <= addr) break; addr = nx;
             }
+            if (blocks.Count == 0) return 0;
 
-            if (snapshot.Count == 0) return 0;
+            // -- Sleep exactly 2 seconds ──
+            System.Threading.Thread.Sleep(2000);
 
-            // â”€â”€ One sleep â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-            System.Threading.Thread.Sleep(2000); // 2s sleep for precise delta
-
-            // â”€â”€ Pass 2: find ticking float â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+            // -- Pass 2: re-read same blocks, compare buffer-to-buffer (exact 2s delta) ─────
             ulong igtHostAddr = 0;
-            foreach (var kv in snapshot)
-            {
-                float v2 = ReadFloat(kv.Key);
-                float delta = v2 - kv.Value;
-                // IGT ticks at ~1 s/s. In 400ms â†’ delta â‰ˆ 0.4s.
-                if (delta > 1.5f && delta < 2.5f) // ~2s at 1 game-sec/real-sec
-                {
-                    igtHostAddr = kv.Key;
-                    break;
+            foreach (var blk in blocks) {
+                int rLen2 = blk.Item2.Length;
+                var buf2 = new byte[rLen2];
+                ReadProcessMemory(processHandle, blk.Item1, buf2, rLen2, out int br2);
+                for (int i = 0; i <= br2 - 4; i += 4) {
+                    float v1 = BitConverter.ToSingle(blk.Item2, i);
+                    float v2b = BitConverter.ToSingle(buf2, i);
+                    if (float.IsNaN(v1)||float.IsNaN(v2b)||float.IsInfinity(v1)||float.IsInfinity(v2b)) continue;
+                    if (v1 < 1.0f || v1 >= 36000f) continue;
+                    float delta = v2b - v1;
+                    if (delta > 1.5f && delta < 2.5f) { igtHostAddr = blk.Item1 + (ulong)i; break; }
                 }
+                if (igtHostAddr != 0) break;
             }
-
             if (igtHostAddr == 0) return 0;
 
-            // â”€â”€ Compute EE base â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-            // If EE_base is page-aligned (ends in 0x000) and IGT_host = EE_base + igtOff,
-            // then igtOff & 0xFFF == igtHostAddr & 0xFFF (lower 12 bits must match).
-            // Step by 0x1000 starting from the value with those fixed lower bits.
-            const ulong IGT_MIN = 0x1D70000UL; // PALFull confirmed: 0x1D80xxx
+            // -- Compute EE base from igtHostAddr ─────────────────────────────
+            const ulong IGT_MIN = 0x1D70000UL;
             const ulong IGT_MAX = 0x1DA0000UL;
-
             if (igtHostAddr < IGT_MIN) return 0;
-
-            ulong lower   = igtHostAddr & 0xFFFUL;            // e.g. 0x518
-            ulong igtOff0 = (IGT_MIN & ~0xFFFUL) | lower;    // first candidate in range
+            ulong lower   = igtHostAddr & 0xFFFUL;
+            ulong igtOff0 = (IGT_MIN & ~0xFFFUL) | lower;
             if (igtOff0 < IGT_MIN) igtOff0 += 0x1000UL;
-
             for (ulong igtOff = igtOff0; igtOff <= IGT_MAX; igtOff += 0x1000UL)
             {
                 if (igtHostAddr < igtOff) break;
                 ulong candidate = igtHostAddr - igtOff;
-                // candidate is guaranteed page-aligned by construction.
-
                 float chk1 = ReadFloat(candidate + igtOff);
                 if (chk1 < 0.5f || chk1 >= 36000f || float.IsNaN(chk1)) continue;
-
                 System.Threading.Thread.Sleep(120);
                 float chk2 = ReadFloat(candidate + igtOff);
                 float d = chk2 - chk1;
-                if (d > 0.05f && d < 0.5f)
-                {
-                    _palIgtOffset = igtOff;
-                    return candidate;
-                }
+                if (d > 0.05f && d < 0.5f) { _palIgtOffset = igtOff; return candidate; }
             }
             return 0;
         }
@@ -574,6 +547,7 @@ namespace SRTPluginProviderSH3C
         ~GameMemorySH3PS2Scanner() => Dispose(false);
     }
 }
+
 
 
 

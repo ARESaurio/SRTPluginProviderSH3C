@@ -385,7 +385,9 @@ namespace SRTPluginProviderSH3C
             System.Threading.Thread.Sleep(2000);
 
             // -- Pass 2: re-read same blocks, compare buffer-to-buffer (exact 2s delta) ─────
-            ulong igtHostAddr = 0;
+            // Try every ticking float in every block until HP validates the EE base.
+            const ulong IGT_MIN = 0x1D70000UL;
+            const ulong IGT_MAX = 0x1DA0000UL;
             foreach (var blk in blocks) {
                 int rLen2 = blk.Item2.Length;
                 var buf2 = new byte[rLen2];
@@ -396,34 +398,26 @@ namespace SRTPluginProviderSH3C
                     if (float.IsNaN(v1)||float.IsNaN(v2b)||float.IsInfinity(v1)||float.IsInfinity(v2b)) continue;
                     if (v1 < 1.0f || v1 >= 36000f) continue;
                     float delta = v2b - v1;
-                    if (delta > 1.5f && delta < 2.5f) { igtHostAddr = blk.Item1 + (ulong)i; break; }
+                    if (delta <= 1.5f || delta >= 2.5f) continue;
+                    // This float ticks at ~1s/s. Try it as IGT candidate.
+                    ulong igtHostAddr = blk.Item1 + (ulong)i;
+                    ulong lower   = igtHostAddr & 0xFFFUL;
+                    ulong igtOff0 = (IGT_MIN & ~0xFFFUL) | lower;
+                    if (igtOff0 < IGT_MIN) igtOff0 += 0x1000UL;
+                    for (ulong igtOff = igtOff0; igtOff <= IGT_MAX; igtOff += 0x1000UL) {
+                        if (igtHostAddr < igtOff) break;
+                        ulong candidate = igtHostAddr - igtOff;
+                        // Non-circular: validate HP at known PAL HP offset (confirmed by PALFull).
+                        float hp = ReadFloat(candidate + 0x47DA10UL);
+                        if (hp < 0.1f || hp > 100f || float.IsNaN(hp)) continue;
+                        // Also verify IGT still ticks at ~1s/s over 120ms.
+                        float chk1 = ReadFloat(candidate + igtOff);
+                        System.Threading.Thread.Sleep(120);
+                        float chk2 = ReadFloat(candidate + igtOff);
+                        float d = chk2 - chk1;
+                        if (d > 0.05f && d < 0.5f) { _palIgtOffset = igtOff; return candidate; }
+                    }
                 }
-                if (igtHostAddr != 0) break;
-            }
-            if (igtHostAddr == 0) return 0;
-
-            // -- Compute EE base from igtHostAddr ─────────────────────────────
-            const ulong IGT_MIN = 0x1D70000UL;
-            const ulong IGT_MAX = 0x1DA0000UL;
-            if (igtHostAddr < IGT_MIN) return 0;
-            ulong lower   = igtHostAddr & 0xFFFUL;
-            ulong igtOff0 = (IGT_MIN & ~0xFFFUL) | lower;
-            if (igtOff0 < IGT_MIN) igtOff0 += 0x1000UL;
-            for (ulong igtOff = igtOff0; igtOff <= IGT_MAX; igtOff += 0x1000UL)
-            {
-                if (igtHostAddr < igtOff) break;
-                ulong candidate = igtHostAddr - igtOff;
-                // Non-circular validation: read HP at candidate+0x47DA10.
-                // PALFull confirmed this HP offset is valid for this session.
-                // If HP is in [0.1,100] the EE base is real, not a false positive.
-                float hp = ReadFloat(candidate + 0x47DA10UL);
-                if (hp < 0.1f || hp > 100f || float.IsNaN(hp)) continue;
-                float chk1 = ReadFloat(candidate + igtOff);
-                if (chk1 < 0.5f || chk1 >= 36000f || float.IsNaN(chk1)) continue;
-                System.Threading.Thread.Sleep(120);
-                float chk2 = ReadFloat(candidate + igtOff);
-                float d = chk2 - chk1;
-                if (d > 0.05f && d < 0.5f) { _palIgtOffset = igtOff; return candidate; }
             }
             return 0;
         }
@@ -552,6 +546,7 @@ namespace SRTPluginProviderSH3C
         ~GameMemorySH3PS2Scanner() => Dispose(false);
     }
 }
+
 
 
 

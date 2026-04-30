@@ -413,6 +413,11 @@ namespace SRTPluginProviderSH3C
             {
                 if (igtHostAddr < igtOff) break;
                 ulong candidate = igtHostAddr - igtOff;
+                // Non-circular validation: read HP at candidate+0x47DA10.
+                // PALFull confirmed this HP offset is valid for this session.
+                // If HP is in [0.1,100] the EE base is real, not a false positive.
+                float hp = ReadFloat(candidate + 0x47DA10UL);
+                if (hp < 0.1f || hp > 100f || float.IsNaN(hp)) continue;
                 float chk1 = ReadFloat(candidate + igtOff);
                 if (chk1 < 0.5f || chk1 >= 36000f || float.IsNaN(chk1)) continue;
                 System.Threading.Thread.Sleep(120);

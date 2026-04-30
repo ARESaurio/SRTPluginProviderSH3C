@@ -434,6 +434,13 @@ namespace SRTPluginProviderSH3C
                             if (bd > 1.5f && bd < 2.5f && bv1 > bestVal) { bestVal = bv1; bestIgtOff = blkEeOff + (ulong)bi; }
                         }
                         if (bestIgtOff == 0) continue;
+                        // CRITICAL: the outer ticking float must BE the IGT itself.
+                        // Otherwise: wrong ticker -> wrong EE base but bestIgtOff still
+                        // points to real IGT (largest value), making triple-check pass
+                        // while EE base is off by N pages.
+                        long posIgt   = (long)(bestIgtOff - blkEeOff); // IGT buf position
+                        long posOuter = (long)i;                        // outer ticker buf pos
+                        if (posIgt != posOuter) continue;               // not the real IGT ticker
                         // Triple-check: sleep 2s more, confirm IGT monotonically increases.
                         // An oscillating timer fails here; real IGT does not.
                         System.Threading.Thread.Sleep(2000);
@@ -594,6 +601,7 @@ namespace SRTPluginProviderSH3C
         ~GameMemorySH3PS2Scanner() => Dispose(false);
     }
 }
+
 
 
 

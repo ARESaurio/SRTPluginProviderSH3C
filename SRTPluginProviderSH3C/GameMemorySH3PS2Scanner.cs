@@ -195,9 +195,12 @@ namespace SRTPluginProviderSH3C
                     {
                         eeRamBase = pal;
                         if (_palIgtOffset != 0) OFFSET_IGT = _palIgtOffset;
-                        // HP discovery: scan EE base + [0x30000,0x500000] for stable float in [10,100].
-                        ulong hpOff = FindPALHpOffset(pal);
-                        if (hpOff != 0) { _palHpOffset = hpOff; OFFSET_HP = hpOff; }
+                        // HP discovery with retry: game may not be fully initialized right after scan.
+                        while (processHandle != IntPtr.Zero) {
+                            ulong hpOff = FindPALHpOffset(pal);
+                            if (hpOff != 0) { _palHpOffset = hpOff; OFFSET_HP = hpOff; break; }
+                            System.Threading.Thread.Sleep(3000);
+                        }
                         break;
                     }
                     System.Threading.Thread.Sleep(3000); // retry if game not running yet
@@ -431,10 +434,8 @@ namespace SRTPluginProviderSH3C
                             if (bd > 1.5f && bd < 2.5f && bv1 > bestVal) { bestVal = bv1; bestIgtOff = blkEeOff + (ulong)bi; }
                         }
                         if (bestIgtOff == 0) continue;
-                        // Read HP at candidate+0x47DA10 BEFORE extra sleep (first sample).
-                        float hp1 = ReadFloat(candidate + 0x47DA10UL);
-                        bool hpValid = hp1 >= 10f && hp1 <= 100f && !float.IsNaN(hp1);
-                        // Triple-check: sleep 2s more, confirm IGT still monotonically increases.
+                        // Triple-check: sleep 2s more, confirm IGT monotonically increases.
+                        // An oscillating timer fails here; real IGT does not.
                         System.Threading.Thread.Sleep(2000);
                         var buf3 = new byte[rLen2];
                         ReadProcessMemory(processHandle, blk.Item1, buf3, rLen2, out int br3);
@@ -444,14 +445,6 @@ namespace SRTPluginProviderSH3C
                         float v3igt = BitConverter.ToSingle(buf3, (int)pos3);
                         float d3 = v3igt - v2igt;
                         if (d3 <= 1.5f || d3 >= 2.5f) continue; // oscillating or wrong rate
-                        // Also verify HP stability over the same 2s window.
-                        // Real HP barely changes in 2s unless actively taking damage.
-                        if (hpValid) {
-                            float hp2 = ReadFloat(candidate + 0x47DA10UL);
-                            if (float.IsNaN(hp2) || Math.Abs(hp2 - hp1) > 5f) hpValid = false;
-                        }
-                        if (!hpValid) continue; // wrong EE base: HP not stable or out of range
-                        _palHpOffset = 0x47DA10UL;
                         _palIgtOffset = bestIgtOff; return candidate;
                     }
                 }
@@ -601,6 +594,7 @@ namespace SRTPluginProviderSH3C
         ~GameMemorySH3PS2Scanner() => Dispose(false);
     }
 }
+
 
 
 

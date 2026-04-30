@@ -438,6 +438,17 @@ namespace SRTPluginProviderSH3C
                             if (bd > 1.5f && bd < 2.5f && bv1 > bestVal) { bestVal = bv1; bestIgtOff = blkEeOff + (ulong)bi; }
                         }
                         if (bestIgtOff == 0) continue;
+                        // Triple-check: sleep 2s more and confirm IGT STILL monotonically increases.
+                        // An oscillating timer (19->21->19) fails; real IGT (630->632->634) passes.
+                        System.Threading.Thread.Sleep(2000);
+                        var buf3 = new byte[rLen2];
+                        ReadProcessMemory(processHandle, blk.Item1, buf3, rLen2, out int br3);
+                        long pos3 = (long)(bestIgtOff - blkEeOff);
+                        if (pos3 < 0 || pos3 > rLen2 - 4) continue;
+                        float v2igt = BitConverter.ToSingle(buf2, (int)pos3);
+                        float v3igt = BitConverter.ToSingle(buf3, (int)pos3);
+                        float d3 = v3igt - v2igt;
+                        if (d3 <= 1.5f || d3 >= 2.5f) continue; // oscillating or wrong rate
                         _palIgtOffset = bestIgtOff; return candidate;
                     }
                 }
@@ -569,6 +580,7 @@ namespace SRTPluginProviderSH3C
         ~GameMemorySH3PS2Scanner() => Dispose(false);
     }
 }
+
 
 
 

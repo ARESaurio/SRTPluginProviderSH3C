@@ -415,7 +415,7 @@ namespace SRTPluginProviderSH3C
                         ulong foundHpOff = 0;
                         foreach (ulong hpTry in hpCandidates) {
                             float hpVal = ReadFloat(candidate + hpTry);
-                            if (hpVal >= 0.1f && hpVal <= 100f && !float.IsNaN(hpVal)) { foundHpOff = hpTry; break; }
+                            if (hpVal >= 10f && hpVal <= 100f && !float.IsNaN(hpVal)) { foundHpOff = hpTry; break; }
                         }
                         if (foundHpOff == 0) continue;
                         _palHpOffset = foundHpOff;
@@ -569,6 +569,8 @@ namespace SRTPluginProviderSH3C
         ~GameMemorySH3PS2Scanner() => Dispose(false);
     }
 }
+
+
 
 
 

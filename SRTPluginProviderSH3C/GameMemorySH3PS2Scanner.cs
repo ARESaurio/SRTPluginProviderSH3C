@@ -195,6 +195,7 @@ namespace SRTPluginProviderSH3C
                     {
                         eeRamBase = pal;
                         if (_palIgtOffset != 0) OFFSET_IGT = _palIgtOffset;
+                        if (_palHpOffset  != 0) OFFSET_HP  = _palHpOffset;
                         break;
                     }
                     System.Threading.Thread.Sleep(3000); // retry if game not running yet
@@ -353,8 +354,9 @@ namespace SRTPluginProviderSH3C
         /// committed pages within one allocation). If PAL_IGT reads a valid, ticking
         /// float, we found the PAL EE RAM. Does NOT require HP=100.
         /// </summary>
-        // Discovered PAL IGT offset (dynamic per session, found at scan time).
+        // Discovered PAL offsets (dynamic per session, found at scan time).
         private ulong _palIgtOffset = 0;
+        private ulong _palHpOffset  = 0;
 
         private ulong ScanForPALViaIGT(ulong maxAddr, ulong minRegion, int mbiSize)
         {
@@ -407,9 +409,16 @@ namespace SRTPluginProviderSH3C
                     for (ulong igtOff = igtOff0; igtOff <= IGT_MAX; igtOff += 0x1000UL) {
                         if (igtHostAddr < igtOff) break;
                         ulong candidate = igtHostAddr - igtOff;
-                        // Non-circular: validate HP at known PAL HP offset (confirmed by PALFull).
-                        float hp = ReadFloat(candidate + 0x47DA10UL);
-                        if (hp < 0.1f || hp > 100f || float.IsNaN(hp)) continue;
+                        // Non-circular: validate HP by trying known PAL HP offsets.
+                        // HP offset changes per PCSX2 session; try all confirmed values.
+                        ulong[] hpCandidates = { 0x47DA10UL, 0x45A8F0UL, 0x48EE98UL, 0x4AD53CUL, 0x4B62C0UL };
+                        ulong foundHpOff = 0;
+                        foreach (ulong hpTry in hpCandidates) {
+                            float hpVal = ReadFloat(candidate + hpTry);
+                            if (hpVal >= 0.1f && hpVal <= 100f && !float.IsNaN(hpVal)) { foundHpOff = hpTry; break; }
+                        }
+                        if (foundHpOff == 0) continue;
+                        _palHpOffset = foundHpOff;
                         // EE base confirmed. Now find real IGT by scanning buf1 vs buf2
                         // directly in EE offset range [0x1D70000, 0x1DA0000].
                         // This avoids accepting a wrong oscillating timer as IGT.
@@ -560,6 +569,8 @@ namespace SRTPluginProviderSH3C
         ~GameMemorySH3PS2Scanner() => Dispose(false);
     }
 }
+
+
 
 
 

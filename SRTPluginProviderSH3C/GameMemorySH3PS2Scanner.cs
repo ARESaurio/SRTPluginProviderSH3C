@@ -410,12 +410,26 @@ namespace SRTPluginProviderSH3C
                         // Non-circular: validate HP at known PAL HP offset (confirmed by PALFull).
                         float hp = ReadFloat(candidate + 0x47DA10UL);
                         if (hp < 0.1f || hp > 100f || float.IsNaN(hp)) continue;
-                        // Also verify IGT still ticks at ~1s/s over 120ms.
-                        float chk1 = ReadFloat(candidate + igtOff);
-                        System.Threading.Thread.Sleep(120);
-                        float chk2 = ReadFloat(candidate + igtOff);
-                        float d = chk2 - chk1;
-                        if (d > 0.05f && d < 0.5f) { _palIgtOffset = igtOff; return candidate; }
+                        // EE base confirmed. Now find real IGT by scanning buf1 vs buf2
+                        // directly in EE offset range [0x1D70000, 0x1DA0000].
+                        // This avoids accepting a wrong oscillating timer as IGT.
+                        ulong blkEeOff = blk.Item1 - candidate; // block start in PS2 space
+                        if (blkEeOff > 0x1DA0000UL) continue;   // block not in IGT range
+                        long igtBufStart = (long)0x1D70000L - (long)blkEeOff;
+                        long igtBufEnd   = (long)0x1DA0000L - (long)blkEeOff;
+                        if (igtBufStart < 0) igtBufStart = 0;
+                        if (igtBufEnd   > rLen2) igtBufEnd = rLen2;
+                        ulong bestIgtOff = 0; float bestVal = 0f;
+                        for (long bi = igtBufStart; bi <= igtBufEnd - 4; bi += 4) {
+                            float bv1 = BitConverter.ToSingle(blk.Item2, (int)bi);
+                            float bv2 = BitConverter.ToSingle(buf2,      (int)bi);
+                            if (float.IsNaN(bv1)||float.IsNaN(bv2)||float.IsInfinity(bv1)||float.IsInfinity(bv2)) continue;
+                            if (bv1 < 1f || bv1 >= 36000f) continue;
+                            float bd = bv2 - bv1;
+                            if (bd > 1.5f && bd < 2.5f && bv1 > bestVal) { bestVal = bv1; bestIgtOff = blkEeOff + (ulong)bi; }
+                        }
+                        if (bestIgtOff == 0) continue;
+                        _palIgtOffset = bestIgtOff; return candidate;
                     }
                 }
             }
@@ -546,6 +560,7 @@ namespace SRTPluginProviderSH3C
         ~GameMemorySH3PS2Scanner() => Dispose(false);
     }
 }
+
 
 
 
